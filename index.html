@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IntelliPOS Interactive - Cuestionarios en Tiempo Real</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js para el Presentador -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>body { font-family: 'Inter', sans-serif; }</style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col">
+
+    <!-- Top Navigation Header -->
+    <header class="border-b border-slate-800 bg-slate-950/80 backdrop-blur sticky top-0 z-50 px-4 py-3">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center font-bold text-xl text-white shadow-lg shadow-indigo-500/30">
+                    ⚡
+                </div>
+                <div>
+                    <h1 class="font-extrabold text-lg tracking-tight bg-gradient-to-r from-white via-indigo-200 to-indigo-400 bg-clip-text text-transparent">
+                        IntelliPOS Interactive
+                    </h1>
+                    <p class="text-xs text-slate-400">Evaluaciones e Interacción en Tiempo Real</p>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-2">
+                <span id="role-badge" class="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-950 text-indigo-300 border border-indigo-800">
+                    Configuración
+                </span>
+                <button onclick="resetApp()" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition flex items-center space-x-1">
+                    <i class="fa-solid fa-rotate"></i>
+                    <span class="hidden sm:inline">Inicio</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow flex flex-col p-4 md:p-6 max-w-7xl w-full mx-auto">
+
+        <!-- VIEW 1: HOME / SETUP SCREEN -->
+        <section id="view-setup" class="my-auto max-w-2xl mx-auto w-full space-y-6 py-6">
+            <div class="text-center space-y-3">
+                <h2 class="text-3xl font-extrabold text-white">Iniciar Cuestionario en Vivo</h2>
+                <p class="text-slate-400 text-sm">Pega las celdas copiadas directamente de tu Google Sheets (Pregunta, Opción A, B, C, D, Correcta).</p>
+            </div>
+
+            <div class="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl space-y-5">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                        Contenido de Google Sheets
+                    </label>
+                    <textarea id="sheet-text-input" rows="8"
+                        placeholder="Pega aquí tus datos copiados de Google Sheets..." 
+                        class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 transition"></textarea>
+                </div>
+                <button id="btn-create" onclick="createCloudSession()" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl shadow-lg transition flex items-center justify-center space-x-2">
+                    <span>🚀 Crear Sesión en Vivo con Supabase</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- VIEW 2: PRESENTER MODE -->
+        <section id="view-presenter" class="hidden flex-col space-y-6">
+            <div class="flex flex-wrap items-center justify-between gap-4 bg-slate-800/60 border border-slate-700/50 rounded-2xl p-4 shadow-lg">
+                <h2 class="text-xl font-bold text-white">Cuestionario en Vivo (Presentador)</h2>
+                <div class="flex items-center space-x-3">
+                    <button onclick="prevQuestion()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm transition">Anterior</button>
+                    <span id="presenter-counter" class="text-sm font-bold bg-slate-900 px-3 py-1 rounded-lg text-indigo-300 border border-slate-700">--</span>
+                    <button onclick="nextQuestion()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm transition">Siguiente</button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 space-y-6">
+                    <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl space-y-4">
+                        <div class="flex justify-between items-start">
+                            <h3 id="presenter-question-text" class="text-2xl font-extrabold text-white">Cargando...</h3>
+                            <button onclick="toggleRevealCorrect()" id="btn-reveal" class="px-3 py-1.5 bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-600/50 rounded-xl text-xs font-semibold transition">
+                                <i class="fa-solid fa-eye mr-1"></i> Ver Respuesta
+                            </button>
+                        </div>
+                    </div>
+                    <div id="presenter-options-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+                    <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl h-64">
+                        <canvas id="resultsChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Columna Derecha: QR Ultra Limpio -->
+                <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 flex flex-col items-center justify-center space-y-4 shadow-xl">
+                    <div class="bg-white p-3 rounded-2xl shadow-inner flex items-center justify-center">
+                        <img id="qr-image-tag" src="" alt="Código QR para unirse" class="w-48 h-48 object-contain">
+                    </div>
+                    <div class="text-center space-y-2 w-full">
+                        <p class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Escanea para unirse</p>
+                        <div class="flex items-center space-x-1 bg-slate-900 p-2 rounded-xl border border-slate-700">
+                            <input type="text" id="participant-link-input" readonly class="bg-transparent text-[10px] text-indigo-400 w-full outline-none font-mono">
+                            <button onclick="copyParticipantLink()" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg transition" title="Copiar enlace">
+                                <i class="fa-solid fa-copy"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- VIEW 3: PARTICIPANT MOBILE MODE -->
+        <section id="view-participant" class="hidden flex-col my-auto max-w-md mx-auto w-full space-y-5">
+            <div class="text-center space-y-1">
+                <span id="participant-counter" class="text-xs font-bold bg-slate-800 px-3 py-1 rounded-full text-indigo-300 border border-slate-700">Pregunta --</span>
+            </div>
+            <div id="mobile-question-text" class="text-lg font-bold p-4 bg-slate-800 border border-slate-700 rounded-2xl text-white shadow-xl text-center">Cargando cuestionario...</div>
+            <div id="mobile-options-container" class="space-y-3"></div>
+            <div id="vote-feedback" class="text-center text-sm font-semibold text-emerald-400 hidden">
+                <i class="fa-solid fa-check-circle mr-1"></i> ¡Voto registrado con éxito!
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // --- CONFIGURACIÓN DE SUPABASE (TUS CREDENCIALES ORIGINALES) ---
+        const SUPABASE_URL = 'https://syshosukdpsiudelwuqz.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_vQPvDpmWTZCH0O6xfQcBlA_ig91xeUf';
+        
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        // ---------------------------------
+
+        let sessionData = { questions: [], currentIndex: 0, votes: {}, reveal: false };
+        let cloudId = '';
+        let chartInstance = null;
+        let syncInterval = null;
+
+        function parseTableText(rawText) {
+            const lines = rawText.split(/\r\n|\n/).filter(line => line.trim().length > 0);
+            if (lines.length === 0) return [];
+            const parsed = [];
+            let startIndex = 0;
+            if (lines[0].toLowerCase().includes('pregunta') || lines[0].toLowerCase().includes('question')) {
+                startIndex = 1;
+            }
+            for (let i = startIndex; i < lines.length; i++) {
+                let cols = lines[i].split('\t');
+                if (cols.length < 2) cols = lines[i].split(',');
+                cols = cols.map(c => c.trim().replace(/^["']|["']$/g, ''));
+                if (cols.length >= 5) {
+                    parsed.push({
+                        pregunta: cols[0],
+                        opcionA: cols[1] || '',
+                        opcionB: cols[2] || '',
+                        opcionC: cols[3] || '',
+                        opcionD: cols[4] || '',
+                        correcta: (cols[5] || 'A').toUpperCase().charAt(0)
+                    });
+                }
+            }
+            return parsed;
+        }
+
+        async function createCloudSession() {
+            const rawText = document.getElementById('sheet-text-input').value;
+            if (!rawText.trim()) {
+                alert("Por favor pega el contenido de tus celdas de Google Sheets.");
+                return;
+            }
+            const questions = parseTableText(rawText);
+            if (questions.length === 0) {
+                alert("No se pudieron interpretar las preguntas. Asegúrate de copiar las columnas correctas.");
+                return;
+            }
+
+            const btn = document.getElementById('btn-create');
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Guardando en Supabase...';
+            btn.disabled = true;
+
+            sessionData = { questions: questions, currentIndex: 0, votes: {}, reveal: false };
+            cloudId = 's_' + Math.random().toString(36).substring(2, 7);
+
+            try {
+                const { error } = await supabaseClient
+                    .from('quiz_session')
+                    .insert([{ id: cloudId, data: sessionData }]);
+
+                if (error) {
+                    console.error("Error Supabase:", error);
+                    alert("Error al guardar la sesión en la base de datos.");
+                    btn.innerHTML = '<span>🚀 Crear Sesión en Vivo con Supabase</span>';
+                    btn.disabled = false;
+                    return;
+                }
+
+                initPresenterMode();
+            } catch (err) {
+                console.error("Fallo de red", err);
+                alert("Hubo un problema de conexión con Supabase.");
+                btn.innerHTML = '<span>🚀 Crear Sesión en Vivo con Supabase</span>';
+                btn.disabled = false;
+            }
+        }
+
+        async function fetchCloudData(isPresenter) {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('quiz_session')
+                    .select('data')
+                    .eq('id', cloudId)
+                    .single();
+
+                if (data && data.data) {
+                    sessionData = data.data;
+                    if (isPresenter) {
+                        renderPresenterQuestion();
+                    } else {
+                        renderParticipantQuestion();
+                    }
+                }
+            } catch (e) {
+                console.warn("Error de sincronización", e);
+            }
+        }
+
+        async function pushCloudData() {
+            try {
+                await supabaseClient
+                    .from('quiz_session')
+                    .update({ data: sessionData })
+                    .eq('id', cloudId);
+            } catch (e) {
+                console.warn("Error al actualizar Supabase", e);
+            }
+        }
+
+        function initPresenterMode() {
+            document.getElementById('view-setup').classList.add('hidden');
+            document.getElementById('view-presenter').classList.remove('hidden');
+            document.getElementById('role-badge').textContent = 'Modo Presentador';
+            
+            renderPresenterQuestion();
+            initChart();
+            
+            const participantUrl = window.location.origin + window.location.pathname + '?id=' + cloudId;
+            document.getElementById('participant-link-input').value = participantUrl;
+            
+            const qrImageUrl = `https://quickchart.io/qr?text=${encodeURIComponent(participantUrl)}&size=250&margin=2&ecLevel=M`;
+            document.getElementById('qr-image-tag').src = qrImageUrl;
+
+            if (syncInterval) clearInterval(syncInterval);
+            syncInterval = setInterval(() => fetchCloudData(true), 1500);
+        }
+
+        function copyParticipantLink() {
+            const input = document.getElementById('participant-link-input');
+            input.select();
+            input.setSelectionRange(0, 99999);
+            navigator.clipboard.writeText(input.value);
+            alert("¡Enlace copiado al portapapeles!");
+        }
+
+        async function toggleRevealCorrect() {
+            sessionData.reveal = !sessionData.reveal;
+            updateRevealButton();
+            renderPresenterQuestion();
+            await pushCloudData();
+        }
+
+        function updateRevealButton() {
+            const btn = document.getElementById('btn-reveal');
+            if (sessionData.reveal) {
+                btn.className = "px-3 py-1.5 bg-amber-600 text-white rounded-xl text-xs font-semibold transition";
+                btn.innerHTML = '<i class="fa-solid fa-eye-slash mr-1"></i> Ocultar Respuesta';
+            } else {
+                btn.className = "px-3 py-1.5 bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-600/50 rounded-xl text-xs font-semibold transition";
+                btn.innerHTML = '<i class="fa-solid fa-eye mr-1"></i> Ver Respuesta';
+            }
+        }
+
+        function renderPresenterQuestion() {
+            const q = sessionData.questions[sessionData.currentIndex];
+            if (!q) return;
+            document.getElementById('presenter-question-text').textContent = q.pregunta;
+            document.getElementById('presenter-counter').textContent = `Pregunta ${sessionData.currentIndex + 1} / ${sessionData.questions.length}`;
+            updateRevealButton();
+            
+            const grid = document.getElementById('presenter-options-grid');
+            grid.innerHTML = ['A', 'B', 'C', 'D'].map(k => {
+                const text = q['opcion' + k];
+                if (!text) return '';
+                const isCorrect = sessionData.reveal && k === q.correcta;
+                const voteCount = sessionData.votes[sessionData.currentIndex + '_' + k] || 0;
+                return `
+                    <div class="p-4 rounded-xl border transition ${isCorrect ? 'bg-emerald-950/40 border-emerald-500 text-white' : 'bg-slate-800/90 border-slate-700 text-white'} shadow-md">
+                        <div class="flex justify-between items-center">
+                            <p class="font-bold"><span class="text-indigo-400">${k}:</span> ${text}</p>
+                            ${isCorrect ? '<span class="text-xs bg-emerald-500 text-slate-950 font-extrabold px-2 py-0.5 rounded">CORRECTA</span>' : ''}
+                        </div>
+                        <span class="text-xs text-slate-400 mt-1 block">${voteCount} votos</span>
+                    </div>
+                `;
+            }).join('');
+            if (chartInstance) updateChartData();
+        }
+
+        function initChart() {
+            const ctx = document.getElementById('resultsChart').getContext('2d');
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: { 
+                    labels: ['A', 'B', 'C', 'D'], 
+                    datasets: [{ 
+                        data: [0,0,0,0], 
+                        backgroundColor: ['#6366f1', '#8b5cf6', '#ec4899', '#3b82f6'],
+                        borderRadius: 8
+                    }] 
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+                        x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function updateChartData() {
+            if (!chartInstance) return;
+            chartInstance.data.datasets[0].data = ['A', 'B', 'C', 'D'].map(k => sessionData.votes[sessionData.currentIndex + '_' + k] || 0);
+            chartInstance.update();
+        }
+
+        async function nextQuestion() { 
+            if(sessionData.currentIndex < sessionData.questions.length - 1) { 
+                sessionData.currentIndex++; 
+                sessionData.reveal = false;
+                renderPresenterQuestion(); 
+                await pushCloudData();
+            } 
+        }
+
+        async function prevQuestion() { 
+            if(sessionData.currentIndex > 0) { 
+                sessionData.currentIndex--; 
+                sessionData.reveal = false;
+                renderPresenterQuestion(); 
+                await pushCloudData();
+            } 
+        }
+
+        function resetApp() { window.location.href = window.location.pathname; }
+
+        // --- MODO PARTICIPANTE (CELULAR) ---
+        window.onload = async () => {
+            const params = new URLSearchParams(window.location.search);
+            cloudId = params.get('id');
+
+            if (cloudId) {
+                document.getElementById('view-setup').classList.add('hidden');
+                document.getElementById('view-participant').classList.remove('hidden');
+                document.getElementById('role-badge').textContent = 'Modo Participante';
+
+                await fetchCloudData(false);
+
+                if (!sessionData.questions || sessionData.questions.length === 0) {
+                    document.getElementById('mobile-question-text').textContent = "Sesión no encontrada o expirada. Pide al presentador el enlace actualizado.";
+                    return;
+                }
+
+                renderParticipantQuestion();
+
+                setInterval(() => fetchCloudData(false), 1500);
+            }
+        };
+
+        function renderParticipantQuestion() {
+            const q = sessionData.questions[sessionData.currentIndex];
+            if (!q) return;
+            document.getElementById('participant-counter').textContent = `Pregunta ${sessionData.currentIndex + 1} / ${sessionData.questions.length}`;
+            document.getElementById('mobile-question-text').textContent = q.pregunta;
+            
+            const container = document.getElementById('mobile-options-container');
+            
+            // Verificamos si este dispositivo ya votó en esta pregunta específica usando localStorage
+            const voteId = `voted_${cloudId}_${sessionData.currentIndex}`;
+            const alreadyVotedOption = localStorage.getItem(voteId);
+
+            if (alreadyVotedOption) {
+                container.innerHTML = `
+                    <div class="p-6 bg-slate-800 rounded-2xl text-center space-y-2 border border-slate-700 shadow-xl">
+                        <p class="text-indigo-400 font-bold">¡Ya has votado en esta pregunta (Opción ${alreadyVotedOption})!</p>
+                        <p class="text-xs text-slate-400">Espera a que el presentador avance a la siguiente pregunta.</p>
+                    </div>
+                `;
+                document.getElementById('vote-feedback').classList.remove('hidden');
+                return;
+            }
+
+            document.getElementById('vote-feedback').classList.add('hidden');
+            container.innerHTML = ['A', 'B', 'C', 'D'].map(k => {
+                const text = q['opcion' + k];
+                if (!text) return '';
+                return `
+                    <button onclick="submitVote('${k}')" class="w-full p-4 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-bold text-white shadow-lg transition text-left flex items-center justify-between">
+                        <span><strong class="text-indigo-200">${k}:</strong> ${text}</span>
+                        <i class="fa-solid fa-chevron-right text-xs"></i>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        async function submitVote(k) {
+            const voteId = `voted_${cloudId}_${sessionData.currentIndex}`;
+            
+            // Doble validación en cliente para evitar envío duplicado
+            if (localStorage.getItem(voteId)) {
+                alert("¡Ya has registrado tu voto en esta pregunta!");
+                return;
+            }
+
+            await fetchCloudData(false);
+            
+            const voteKey = sessionData.currentIndex + '_' + k;
+            sessionData.votes[voteKey] = (sessionData.votes[voteKey] || 0) + 1;
+
+            await pushCloudData();
+
+            // Guardamos el registro en localStorage para este dispositivo/pregunta
+            localStorage.setItem(voteId, k);
+
+            document.getElementById('mobile-options-container').innerHTML = `
+                <div class="p-6 bg-slate-800 rounded-2xl text-center space-y-2 border border-slate-700 shadow-xl">
+                    <p class="text-indigo-400 font-bold">¡Voto registrado para la opción ${k}!</p>
+                    <p class="text-xs text-slate-400">Tu respuesta se ha sincronizado con la pantalla del presentador.</p>
+                </div>
+            `;
+            document.getElementById('vote-feedback').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
