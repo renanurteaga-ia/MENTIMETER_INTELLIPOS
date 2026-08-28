@@ -3,42 +3,66 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IntelliPOS Interactive - Cuestionarios en Tiempo Real</title>
+    <title>IntelliPOS Interactive 2.0 - Cuestionarios en Tiempo Real</title>
 
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Chart.js para el Presentador -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Supabase JS Client -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <!-- Google Fonts Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
-    <style>body { font-family: 'Inter', sans-serif; }</style>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .fade-in  { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+        .pulse-dot { animation: blink 2s infinite; }
+        @keyframes blink { 0%,100%{ opacity:1; } 50%{ opacity:.3; } }
+        .timer-bar { transition: width 1s linear, background-color 0.5s; }
+    </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col">
 
-    <!-- Top Navigation Header -->
+    <!-- ── Advertencia HTTPS ──────────────────────────────────────────────── -->
+    <div id="https-warning" class="hidden bg-amber-900/80 border-b border-amber-700/60 px-4 py-2 text-center text-xs text-amber-200">
+        <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+        Esta página funciona mejor bajo <strong>HTTPS</strong>. En HTTP, el portapapeles y la cámara pueden no estar disponibles en dispositivos móviles.
+    </div>
+
+    <!-- ── Header ─────────────────────────────────────────────────────────── -->
     <header class="border-b border-slate-800 bg-slate-950/80 backdrop-blur sticky top-0 z-50 px-4 py-3">
         <div class="max-w-7xl mx-auto flex items-center justify-between">
             <div class="flex items-center space-x-3">
-                <div class="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center font-bold text-xl text-white shadow-lg shadow-indigo-500/30">
-                    ⚡
-                </div>
+                <div class="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-xl font-bold text-white shadow-lg shadow-indigo-500/30">⚡</div>
                 <div>
                     <h1 class="font-extrabold text-lg tracking-tight bg-gradient-to-r from-white via-indigo-200 to-indigo-400 bg-clip-text text-transparent">
                         IntelliPOS Interactive
+                        <span class="text-indigo-400 text-sm ml-1">2.0</span>
                     </h1>
                     <p class="text-xs text-slate-400">Evaluaciones e Interacción en Tiempo Real</p>
                 </div>
             </div>
 
             <div class="flex items-center space-x-2">
-                <span id="role-badge" class="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-950 text-indigo-300 border border-indigo-800">
-                    Configuración
-                </span>
+                <!-- Indicador de conexión en tiempo real -->
+                <div id="rt-indicator" class="hidden items-center space-x-1 px-2.5 py-1 rounded-full bg-emerald-950 border border-emerald-800 text-emerald-400 text-xs font-semibold">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot inline-block"></span>
+                    <span>En vivo</span>
+                </div>
+                <!-- Indicador de fallback a polling -->
+                <div id="poll-indicator" class="hidden items-center space-x-1 px-2.5 py-1 rounded-full bg-amber-950 border border-amber-800 text-amber-400 text-xs font-semibold">
+                    <i class="fa-solid fa-rotate fa-spin text-[10px]"></i>
+                    <span>Polling</span>
+                </div>
+
+                <span id="role-badge" class="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-950 text-indigo-300 border border-indigo-800">Configuración</span>
+                <!-- Info usuario logueado -->
+                <div id="user-info" class="hidden items-center space-x-2">
+                    <span id="user-email-display" class="text-xs text-slate-400 hidden sm:inline"></span>
+                    <button onclick="logoutUser()" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-red-900/50 border border-slate-700 hover:border-red-700 text-slate-300 hover:text-red-300 transition flex items-center space-x-1">
+                        <i class="fa-solid fa-right-from-bracket"></i>
+                        <span class="hidden sm:inline">Salir</span>
+                    </button>
+                </div>
                 <button onclick="resetApp()" class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition flex items-center space-x-1">
                     <i class="fa-solid fa-rotate"></i>
                     <span class="hidden sm:inline">Inicio</span>
@@ -49,404 +73,1600 @@
 
     <main class="flex-grow flex flex-col p-4 md:p-6 max-w-7xl w-full mx-auto">
 
-        <!-- VIEW 1: HOME / SETUP SCREEN -->
-        <section id="view-setup" class="my-auto max-w-2xl mx-auto w-full space-y-6 py-6">
-            <div class="text-center space-y-3">
+        <!-- ── VISTA 0: LOGIN ─────────────────────────────────────────────── -->
+        <section id="view-login" class="my-auto max-w-sm mx-auto w-full space-y-6 py-6 fade-in flex-col">
+            <div class="text-center space-y-2">
+                <div class="text-5xl mb-2">⚡</div>
+                <h2 class="text-2xl font-extrabold text-white">IntelliPOS Interactive</h2>
+                <p class="text-slate-400 text-sm">Ingresa con tu cuenta autorizada</p>
+            </div>
+            <div class="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Correo electrónico</label>
+                    <input type="email" id="login-email" placeholder="tucorreo@ejemplo.com"
+                        class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition"
+                        onkeydown="if(event.key==='Enter') loginUser()">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Contraseña</label>
+                    <input type="password" id="login-password" placeholder="••••••••"
+                        class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition"
+                        onkeydown="if(event.key==='Enter') loginUser()">
+                </div>
+                <div id="login-error" class="hidden bg-red-900/40 border border-red-700/60 rounded-xl px-4 py-3 text-sm text-red-300"></div>
+                <button id="login-btn" onclick="loginUser()"
+                    class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition shadow-lg shadow-indigo-500/20 text-sm">
+                    Ingresar
+                </button>
+            </div>
+            <p class="text-center text-xs text-slate-600">¿No tienes acceso? Contacta al administrador.</p>
+        </section>
+
+        <!-- ── VISTA 1: CONFIGURACIÓN (Presentador) ────────────────────────── -->
+        <section id="view-setup" class="my-auto max-w-2xl mx-auto w-full space-y-6 py-6 flex-col">
+            <div class="text-center space-y-2">
                 <h2 class="text-3xl font-extrabold text-white">Iniciar Cuestionario en Vivo</h2>
-                <p class="text-slate-400 text-sm">Pega las celdas copiadas directamente de tu Google Sheets (Pregunta, Opción A, B, C, D, Correcta).</p>
+                <p class="text-slate-400 text-sm">Pega las celdas copiadas de Google Sheets: Pregunta · Opción A · B · C · D · Correcta</p>
             </div>
 
             <div class="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl space-y-5">
                 <div>
-                    <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                        Contenido de Google Sheets
-                    </label>
+                    <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Contenido de Google Sheets</label>
                     <textarea id="sheet-text-input" rows="8"
-                        placeholder="Pega aquí tus datos copiados de Google Sheets..." 
-                        class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 transition"></textarea>
+                        placeholder="Pega aquí tus datos copiados de Google Sheets..."
+                        class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 transition resize-none"></textarea>
                 </div>
-                <button id="btn-create" onclick="createCloudSession()" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl shadow-lg transition flex items-center justify-center space-x-2">
-                    <span>🚀 Crear Sesión en Vivo con Supabase</span>
+
+                <!-- Nombre y modalidad -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Nombre de la sesión</label>
+                        <input type="text" id="session-name-input" placeholder="Ej: Capacitación Julio 2026"
+                            class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Modalidad</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <label class="flex items-center space-x-2 bg-slate-900 border border-slate-700 rounded-xl p-2.5 cursor-pointer hover:border-indigo-500 transition has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-950/40">
+                                <input type="radio" name="session-mode" value="quiz" checked onchange="toggleModeOptions()" class="accent-indigo-500">
+                                <span class="text-sm text-white">🎯 Cuestionario</span>
+                            </label>
+                            <label class="flex items-center space-x-2 bg-slate-900 border border-slate-700 rounded-xl p-2.5 cursor-pointer hover:border-indigo-500 transition has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-950/40">
+                                <input type="radio" name="session-mode" value="exam" onchange="toggleModeOptions()" class="accent-indigo-500">
+                                <span class="text-sm text-white">📝 Examen</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Opciones para Cuestionario -->
+                <div id="quiz-options">
+                    <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Tiempo por pregunta</label>
+                    <select id="timer-select" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
+                        <option value="0">Sin límite de tiempo</option>
+                        <option value="20">20 segundos</option>
+                        <option value="30">30 segundos</option>
+                        <option value="60">1 minuto</option>
+                        <option value="120">2 minutos</option>
+                    </select>
+                </div>
+
+                <!-- Opciones para Examen -->
+                <div id="exam-options" class="hidden space-y-3">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Duración del examen (minutos)</label>
+                            <input type="number" id="exam-minutes" value="30" min="1" max="180"
+                                class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
+                        </div>
+                        <div class="flex flex-col justify-end space-y-2">
+                            <label class="flex items-center space-x-2 cursor-pointer">
+                                <input type="checkbox" id="random-order" class="w-4 h-4 accent-indigo-500">
+                                <span class="text-sm text-slate-300">Orden aleatorio de preguntas</span>
+                            </label>
+                            <p class="text-xs text-slate-500">Cada estudiante recibe un orden diferente (anti-copia)</p>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="btn-create" onclick="createCloudSession()"
+                    class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl shadow-lg transition flex items-center justify-center space-x-2">
+                    <span>🚀 Crear Sesión en Vivo</span>
                 </button>
             </div>
         </section>
 
-        <!-- VIEW 2: PRESENTER MODE -->
-        <section id="view-presenter" class="hidden flex-col space-y-6">
-            <div class="flex flex-wrap items-center justify-between gap-4 bg-slate-800/60 border border-slate-700/50 rounded-2xl p-4 shadow-lg">
-                <h2 class="text-xl font-bold text-white">Cuestionario en Vivo (Presentador)</h2>
-                <div class="flex items-center space-x-3">
-                    <button onclick="prevQuestion()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm transition">Anterior</button>
-                    <span id="presenter-counter" class="text-sm font-bold bg-slate-900 px-3 py-1 rounded-lg text-indigo-300 border border-slate-700">--</span>
-                    <button onclick="nextQuestion()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm transition">Siguiente</button>
+        <!-- ── VISTA 2: LOBBY PRESENTADOR ────────────────────────────────── -->
+        <section id="view-lobby-presenter" class="hidden flex flex-col my-auto max-w-2xl mx-auto w-full space-y-6 py-6 fade-in">
+            <div class="text-center space-y-2">
+                <div class="text-4xl">🎯</div>
+                <h2 class="text-2xl font-extrabold text-white" id="lobby-session-title">Sala de espera</h2>
+                <p class="text-slate-400 text-sm">Los participantes se están conectando. Inicia el cuestionario cuando estés listo.</p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <!-- QR y enlace -->
+                <div class="bg-slate-800 p-5 rounded-2xl border border-slate-700 flex flex-col items-center space-y-3 shadow-xl">
+                    <p class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Escanea para unirse</p>
+                    <div class="bg-white p-3 rounded-2xl shadow-inner">
+                        <img id="lobby-qr" src="" alt="Código QR" class="w-36 h-36 object-contain">
+                    </div>
+                    <div class="flex items-center space-x-1 bg-slate-900 p-2 rounded-xl border border-slate-700 w-full">
+                        <input type="text" id="lobby-link" readonly
+                            class="bg-transparent text-[10px] text-indigo-400 w-full outline-none font-mono">
+                        <button onclick="copyLobbyLink()"
+                            class="shrink-0 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg transition" title="Copiar enlace">
+                            <i class="fa-solid fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Lista de asistencia -->
+                <div class="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-xl flex flex-col space-y-3">
+                    <div class="flex items-center justify-between">
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                            <i class="fa-solid fa-user-check mr-1 text-emerald-400"></i>Lista de asistencia
+                        </p>
+                        <span class="text-xs bg-indigo-900 border border-indigo-700 text-indigo-300 px-2 py-0.5 rounded-full font-bold">
+                            <span id="lobby-count">0</span> conectados
+                        </span>
+                    </div>
+                    <div id="lobby-participants-list" class="flex-1 space-y-1 max-h-52 overflow-y-auto text-xs text-slate-300">
+                        <p class="text-slate-500 italic">Esperando participantes…</p>
+                    </div>
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div class="lg:col-span-2 space-y-6">
-                    <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl space-y-4">
-                        <div class="flex justify-between items-start">
-                            <h3 id="presenter-question-text" class="text-2xl font-extrabold text-white">Cargando...</h3>
-                            <button onclick="toggleRevealCorrect()" id="btn-reveal" class="px-3 py-1.5 bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-600/50 rounded-xl text-xs font-semibold transition">
-                                <i class="fa-solid fa-eye mr-1"></i> Ver Respuesta
+            <!-- Botón iniciar -->
+            <button onclick="startQuiz()"
+                class="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-lg rounded-2xl shadow-xl transition flex items-center justify-center space-x-3">
+                <i class="fa-solid fa-play"></i>
+                <span>Iniciar cuestionario</span>
+            </button>
+            <p class="text-center text-xs text-slate-500">Todos los participantes ya conectados recibirán la primera pregunta simultáneamente.</p>
+        </section>
+
+        <!-- ── VISTA 3: LOBBY PARTICIPANTE ─────────────────────────────────── -->
+        <section id="view-lobby-participant" class="hidden flex flex-col my-auto max-w-sm mx-auto w-full space-y-5 fade-in text-center">
+            <div class="space-y-3">
+                <div class="text-5xl">⏳</div>
+                <h2 class="text-2xl font-extrabold text-white">¡Ya estás registrado!</h2>
+                <p class="text-slate-400 text-sm" id="lobby-wait-name"></p>
+            </div>
+            <div class="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 shadow-xl space-y-4">
+                <div class="flex items-center justify-center space-x-2 text-indigo-400">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <p class="text-sm font-semibold">Esperando que el presentador inicie el cuestionario…</p>
+                </div>
+                <div class="border-t border-slate-700 pt-3">
+                    <p class="text-xs text-slate-500 mb-2">Participantes conectados:</p>
+                    <div id="lobby-peers-list" class="text-xs text-slate-300 space-y-1 max-h-40 overflow-y-auto"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── VISTA 4: PRESENTADOR ────────────────────────────────────────── -->
+        <section id="view-presenter" class="hidden flex flex-col space-y-4">
+
+            <!-- Barra de control -->
+            <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-800/60 border border-slate-700/50 rounded-2xl p-4 shadow-lg">
+                <div class="flex items-center space-x-3 flex-wrap gap-2">
+                    <h2 id="session-title-display" class="text-lg font-bold text-white">Cuestionario en Vivo</h2>
+                    <span class="text-xs bg-slate-900 border border-slate-700 text-slate-300 px-2.5 py-1 rounded-lg">
+                        <i class="fa-solid fa-users mr-1 text-indigo-400"></i>
+                        <span id="participants-count">0</span> participantes
+                    </span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button onclick="prevQuestion()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm transition">
+                        <i class="fa-solid fa-chevron-left mr-1"></i>Anterior
+                    </button>
+                    <span id="presenter-counter" class="text-sm font-bold bg-slate-900 px-3 py-1.5 rounded-lg text-indigo-300 border border-slate-700">--</span>
+                    <button onclick="nextQuestion()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm transition">
+                        Siguiente<i class="fa-solid fa-chevron-right ml-1"></i>
+                    </button>
+                    <button onclick="endSession()" class="px-3 py-2 bg-red-900/50 hover:bg-red-800/70 border border-red-800/50 text-red-300 rounded-lg text-xs font-semibold transition">
+                        <i class="fa-solid fa-stop mr-1"></i>Finalizar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Barra de tiempo (presentador) -->
+            <div id="p-timer-wrap" class="hidden space-y-1">
+                <div class="bg-slate-800 border border-slate-700 rounded-full h-3 overflow-hidden">
+                    <div id="p-timer-bar" class="h-full timer-bar bg-indigo-500 rounded-full" style="width:100%"></div>
+                </div>
+                <p class="text-right text-xs text-slate-400"><span id="p-timer-label">--</span> seg. de referencia — revela manualmente cuando lo decidas</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+                <!-- Columna central: pregunta + opciones + gráfico -->
+                <div class="lg:col-span-2 space-y-4">
+                    <div class="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-xl">
+                        <div class="flex justify-between items-start gap-3">
+                            <h3 id="presenter-question-text" class="text-xl font-extrabold text-white flex-1 leading-snug">Cargando…</h3>
+                            <button onclick="toggleReveal()" id="btn-reveal"
+                                class="shrink-0 px-3 py-1.5 bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-600/50 rounded-xl text-xs font-semibold transition whitespace-nowrap">
+                                <i class="fa-solid fa-eye mr-1"></i>Ver Respuesta
                             </button>
                         </div>
                     </div>
+
                     <div id="presenter-options-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
-                    <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl h-64">
-                        <canvas id="resultsChart"></canvas>
+
+                    <div class="bg-slate-800 p-5 rounded-2xl border border-slate-700 shadow-xl">
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Distribución de votos</p>
+                        <div class="h-52"><canvas id="resultsChart"></canvas></div>
                     </div>
                 </div>
 
-                <!-- Columna Derecha: QR Ultra Limpio -->
-                <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 flex flex-col items-center justify-center space-y-4 shadow-xl">
-                    <div class="bg-white p-3 rounded-2xl shadow-inner flex items-center justify-center">
-                        <img id="qr-image-tag" src="" alt="Código QR para unirse" class="w-48 h-48 object-contain">
-                    </div>
-                    <div class="text-center space-y-2 w-full">
+                <!-- Columna derecha: QR + participantes -->
+                <div class="space-y-4">
+                    <div class="bg-slate-800 p-5 rounded-2xl border border-slate-700 flex flex-col items-center space-y-3 shadow-xl">
                         <p class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Escanea para unirse</p>
-                        <div class="flex items-center space-x-1 bg-slate-900 p-2 rounded-xl border border-slate-700">
-                            <input type="text" id="participant-link-input" readonly class="bg-transparent text-[10px] text-indigo-400 w-full outline-none font-mono">
-                            <button onclick="copyParticipantLink()" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg transition" title="Copiar enlace">
+                        <div class="bg-white p-3 rounded-2xl shadow-inner">
+                            <img id="qr-image-tag" src="" alt="Código QR" class="w-40 h-40 object-contain">
+                        </div>
+                        <div class="flex items-center space-x-1 bg-slate-900 p-2 rounded-xl border border-slate-700 w-full">
+                            <input type="text" id="participant-link-input" readonly
+                                class="bg-transparent text-[10px] text-indigo-400 w-full outline-none font-mono">
+                            <button onclick="copyLink()"
+                                class="shrink-0 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg transition" title="Copiar enlace">
                                 <i class="fa-solid fa-copy"></i>
                             </button>
                         </div>
                     </div>
+
+                    <!-- Lista de participantes -->
+                    <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700 shadow-xl">
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                            <i class="fa-solid fa-circle-check mr-1 text-emerald-400"></i>Participantes conectados
+                        </p>
+                        <div id="participants-list" class="space-y-1 max-h-52 overflow-y-auto text-xs text-slate-300 scrollbar-thin">
+                            <p class="text-slate-500 italic">Esperando participantes…</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>
 
-        <!-- VIEW 3: PARTICIPANT MOBILE MODE -->
-        <section id="view-participant" class="hidden flex-col my-auto max-w-md mx-auto w-full space-y-5">
-            <div class="text-center space-y-1">
-                <span id="participant-counter" class="text-xs font-bold bg-slate-800 px-3 py-1 rounded-full text-indigo-300 border border-slate-700">Pregunta --</span>
+        <!-- ── VISTA 5: REGISTRO DE PARTICIPANTE (Apodo) ──────────────────── -->
+        <section id="view-nickname" class="hidden flex flex-col my-auto max-w-sm mx-auto w-full space-y-5 fade-in">
+            <div class="text-center space-y-2">
+                <div class="text-5xl">👋</div>
+                <h2 class="text-2xl font-extrabold text-white">¡Bienvenido!</h2>
+                <p class="text-slate-400 text-sm" id="nickname-session-name">Ingresa tu nombre para unirte al cuestionario.</p>
             </div>
-            <div id="mobile-question-text" class="text-lg font-bold p-4 bg-slate-800 border border-slate-700 rounded-2xl text-white shadow-xl text-center">Cargando cuestionario...</div>
-            <div id="mobile-options-container" class="space-y-3"></div>
-            <div id="vote-feedback" class="text-center text-sm font-semibold text-emerald-400 hidden">
-                <i class="fa-solid fa-check-circle mr-1"></i> ¡Voto registrado con éxito!
+            <div class="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 shadow-xl space-y-4">
+                <input type="text" id="nickname-input"
+                    placeholder="Tu nombre o apodo…"
+                    maxlength="30"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-white text-center text-lg focus:outline-none focus:border-indigo-500 transition"
+                    onkeydown="if(event.key==='Enter') joinSession()">
+                <button onclick="joinSession()"
+                    class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl shadow-lg transition">
+                    Unirme →
+                </button>
             </div>
         </section>
+
+        <!-- ── VISTA 6: PARTICIPANTE (responder preguntas) ─────────────────── -->
+        <section id="view-participant" class="hidden flex flex-col my-auto max-w-md mx-auto w-full space-y-4 fade-in">
+            <div class="flex items-center justify-between">
+                <span id="participant-counter" class="text-xs font-bold bg-slate-800 px-3 py-1 rounded-full text-indigo-300 border border-slate-700">Pregunta --</span>
+                <span id="nickname-badge" class="text-xs bg-slate-800 px-3 py-1 rounded-full text-slate-300 border border-slate-700"></span>
+            </div>
+
+            <!-- Barra de tiempo (participante) -->
+            <div id="pt-timer-wrap" class="hidden space-y-1">
+                <div class="bg-slate-800 border border-slate-700 rounded-full h-2.5 overflow-hidden">
+                    <div id="pt-timer-bar" class="h-full timer-bar bg-indigo-500 rounded-full" style="width:100%"></div>
+                </div>
+            </div>
+
+            <div id="mobile-question-text"
+                class="text-lg font-bold p-5 bg-slate-800 border border-slate-700 rounded-2xl text-white shadow-xl text-center leading-snug">
+                Cargando cuestionario…
+            </div>
+
+            <div id="mobile-options-container" class="space-y-3"></div>
+
+            <!-- Resultados en tiempo real (post-voto) -->
+            <div id="vote-results" class="hidden bg-slate-800/80 border border-slate-700 rounded-2xl p-4 space-y-3 fade-in">
+                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Resultados en tiempo real</p>
+                <div id="vote-results-bars" class="space-y-2"></div>
+            </div>
+        </section>
+
+        <!-- ── VISTA 6a: EXAMEN — PRESENTADOR ────────────────────────────── -->
+        <section id="view-exam-presenter" class="hidden flex flex-col my-auto max-w-lg mx-auto w-full space-y-6 py-6 text-center fade-in">
+            <div class="space-y-1">
+                <div class="text-4xl">📝</div>
+                <h2 id="exam-session-title" class="text-2xl font-extrabold text-white">Examen en curso</h2>
+                <p class="text-slate-400 text-sm">Los estudiantes están respondiendo individualmente.</p>
+            </div>
+
+            <!-- Cronómetro grande -->
+            <div class="bg-slate-800 border border-slate-700 rounded-3xl p-8 shadow-2xl space-y-2">
+                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Tiempo restante</p>
+                <p id="exam-timer-display" class="text-7xl font-extrabold text-indigo-300 tabular-nums">--:--</p>
+                <div class="h-2 bg-slate-700 rounded-full overflow-hidden mt-3">
+                    <div id="exam-timer-bar" class="h-full rounded-full bg-indigo-500 transition-all duration-1000" style="width:100%"></div>
+                </div>
+            </div>
+
+            <!-- Conteo de entregas -->
+            <div class="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 space-y-1">
+                <p class="text-xs text-slate-400 font-semibold uppercase tracking-wider">Entregas recibidas</p>
+                <p class="text-4xl font-extrabold text-emerald-400">
+                    <span id="exam-submitted-count">0</span>
+                    <span class="text-slate-500 text-xl"> / <span id="exam-total-count">0</span></span>
+                </p>
+            </div>
+
+            <button onclick="endExamEarly()"
+                class="py-3 bg-red-900/40 hover:bg-red-800/60 border border-red-800/50 text-red-300 font-semibold rounded-xl text-sm transition">
+                <i class="fa-solid fa-stop mr-2"></i>Finalizar examen ahora
+            </button>
+        </section>
+
+        <!-- ── VISTA 6b: EXAMEN — PARTICIPANTE ────────────────────────────── -->
+        <section id="view-exam-participant" class="hidden flex flex-col w-full max-w-2xl mx-auto py-4 space-y-4 fade-in">
+            <!-- Barra superior: progreso + timer -->
+            <div class="flex items-center justify-between gap-3">
+                <span id="exam-progress-label" class="text-xs font-bold bg-slate-800 px-3 py-1 rounded-full text-indigo-300 border border-slate-700">--</span>
+                <div id="exam-warning-banner" class="hidden px-3 py-1 bg-red-900/60 border border-red-700/60 rounded-full text-xs font-bold text-red-300 animate-pulse">
+                    ⚠️ ¡Queda 1 minuto!
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span id="exam-participant-timer" class="text-sm font-extrabold text-indigo-300 tabular-nums bg-slate-800 px-3 py-1 rounded-full border border-slate-700">--:--</span>
+                </div>
+            </div>
+
+            <!-- Barra de progreso visual de preguntas -->
+            <div id="exam-dot-nav" class="flex flex-wrap gap-1.5 justify-center"></div>
+
+            <!-- Pregunta actual -->
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl space-y-4">
+                <p id="exam-question-num" class="text-xs text-indigo-400 font-semibold uppercase tracking-wider">Pregunta --</p>
+                <p id="exam-question-text" class="text-lg font-bold text-white leading-snug">Cargando…</p>
+                <div id="exam-options-container" class="space-y-2"></div>
+            </div>
+
+            <!-- Navegación -->
+            <div class="flex items-center justify-between gap-3">
+                <button onclick="examNav(-1)"
+                    class="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition flex items-center space-x-1">
+                    <i class="fa-solid fa-chevron-left"></i><span>Anterior</span>
+                </button>
+                <button onclick="submitExam()"
+                    class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold shadow-lg transition flex items-center space-x-2">
+                    <i class="fa-solid fa-paper-plane"></i><span>Entregar examen</span>
+                </button>
+                <button onclick="examNav(1)"
+                    class="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition flex items-center space-x-1">
+                    <span>Siguiente</span><i class="fa-solid fa-chevron-right"></i>
+                </button>
+            </div>
+            <p class="text-center text-xs text-slate-500">Puedes navegar y cambiar respuestas libremente hasta entregar.</p>
+        </section>
+
+        <!-- ── VISTA 7: SESIÓN FINALIZADA (contenido dinámico según rol) ─── -->
+        <section id="view-ended" class="hidden flex flex-col my-auto w-full max-w-3xl mx-auto py-6 fade-in">
+            <div id="ended-content" class="w-full">
+                <!-- Se rellena por renderEndPresenter() o renderEndParticipant() -->
+                <div class="text-center space-y-4">
+                    <div class="text-6xl">🏁</div>
+                    <h2 class="text-2xl font-extrabold text-white">¡Sesión Finalizada!</h2>
+                    <p class="text-slate-400">El presentador ha concluido el cuestionario.<br>¡Gracias por participar!</p>
+                    <button onclick="resetApp()" class="mt-4 px-6 py-2 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">Volver al inicio</button>
+                </div>
+            </div>
+        </section>
+
     </main>
 
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         JAVASCRIPT
+    ═══════════════════════════════════════════════════════════════════════ -->
     <script>
-        // --- CONFIGURACIÓN DE SUPABASE (TUS CREDENCIALES ORIGINALES) ---
-        const SUPABASE_URL = 'https://syshosukdpsiudelwuqz.supabase.co';
-        const SUPABASE_KEY = 'sb_publishable_vQPvDpmWTZCH0O6xfQcBlA_ig91xeUf';
-        
-        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        // ---------------------------------
+    // ── CONFIGURACIÓN DE SUPABASE ─────────────────────────────────────────────
+    // NOTA DE SEGURIDAD: Active Row Level Security (RLS) en Supabase para
+    // proteger sus datos. Esta clave pública (publishable key) solo debe tener
+    // permisos de lectura/escritura sobre la tabla 'quiz_session'.
+    const SUPABASE_URL = 'https://syshosukdpsiudelwuqz.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_vQPvDpmWTZCH0O6xfQcBlA_ig91xeUf';
 
-        let sessionData = { questions: [], currentIndex: 0, votes: {}, reveal: false };
-        let cloudId = '';
-        let chartInstance = null;
-        let syncInterval = null;
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+        realtime: { params: { eventsPerSecond: 10 } }
+    });
 
-        function parseTableText(rawText) {
-            const lines = rawText.split(/\r\n|\n/).filter(line => line.trim().length > 0);
-            if (lines.length === 0) return [];
-            const parsed = [];
-            let startIndex = 0;
-            if (lines[0].toLowerCase().includes('pregunta') || lines[0].toLowerCase().includes('question')) {
-                startIndex = 1;
-            }
-            for (let i = startIndex; i < lines.length; i++) {
-                let cols = lines[i].split('\t');
-                if (cols.length < 2) cols = lines[i].split(',');
-                cols = cols.map(c => c.trim().replace(/^["']|["']$/g, ''));
-                if (cols.length >= 5) {
-                    parsed.push({
-                        pregunta: cols[0],
-                        opcionA: cols[1] || '',
-                        opcionB: cols[2] || '',
-                        opcionC: cols[3] || '',
-                        opcionD: cols[4] || '',
-                        correcta: (cols[5] || 'A').toUpperCase().charAt(0)
-                    });
-                }
-            }
-            return parsed;
-        }
+    // ── ESTADO GLOBAL ─────────────────────────────────────────────────────────
+    let sessionData  = { questions:[], currentIndex:0, votes:{}, voters:{}, participants:{}, participantVotes:{}, reveal:false, status:'active', timerSeconds:0, name:'', questionChangedAt:0 };
+    let cloudId      = '';
+    let chartInst    = null;
+    let rtChannel    = null;
+    let rtConnected  = false;
+    let fallbackInt  = null;
+    let timerInt     = null;
+    let participantId   = '';
+    let participantNick = '';
+    let isPresenter     = false;
+    let lastRenderedIdx = -1;    // Para detectar cambio de pregunta en participante
 
-        async function createCloudSession() {
-            const rawText = document.getElementById('sheet-text-input').value;
-            if (!rawText.trim()) {
-                alert("Por favor pega el contenido de tus celdas de Google Sheets.");
+    // ── UTILIDADES ────────────────────────────────────────────────────────────
+    const $ = id => document.getElementById(id);
+
+    function genId(prefix = '') {
+        return prefix + Math.random().toString(36).substring(2, 9);
+    }
+
+    /** Obtiene o crea un UUID persistente para este dispositivo/navegador */
+    function getParticipantId() {
+        let pid = localStorage.getItem('ipos_pid');
+        if (!pid) { pid = genId('p_'); localStorage.setItem('ipos_pid', pid); }
+        return pid;
+    }
+
+    function showView(id) {
+        ['view-login','view-setup','view-lobby-presenter','view-lobby-participant','view-presenter','view-nickname','view-participant','view-exam-presenter','view-exam-participant','view-ended'].forEach(v => {
+            $(v)?.classList.add('hidden');
+            $(v)?.classList.remove('flex');
+        });
+        $(id)?.classList.remove('hidden');
+        $(id)?.classList.add('flex');
+    }
+
+    // Advertencia HTTPS
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        $('https-warning').classList.remove('hidden');
+    }
+
+    // ── AUTENTICACIÓN ─────────────────────────────────────────────────────────
+    async function checkAuth() {
+        showView('view-login'); // Mostrar login por defecto mientras verificamos
+        try {
+            const { data: { session } } = await sb.auth.getSession();
+            if (!session) { showView('view-login'); return; }
+            await onAuthSuccess(session.user.email);
+        } catch(e) { showView('view-login'); }
+    }
+
+    async function onAuthSuccess(email) {
+        try {
+            const { data } = await sb.from('authorized_users').select('activo, nombre').eq('email', email).single();
+            if (!data || !data.activo) {
+                await sb.auth.signOut();
+                $('login-error').textContent = 'Tu cuenta no está autorizada. Contacta al administrador.';
+                $('login-error').classList.remove('hidden');
+                showView('view-login');
                 return;
             }
-            const questions = parseTableText(rawText);
-            if (questions.length === 0) {
-                alert("No se pudieron interpretar las preguntas. Asegúrate de copiar las columnas correctas.");
-                return;
-            }
-
-            const btn = document.getElementById('btn-create');
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i> Guardando en Supabase...';
-            btn.disabled = true;
-
-            sessionData = { questions: questions, currentIndex: 0, votes: {}, reveal: false };
-            cloudId = 's_' + Math.random().toString(36).substring(2, 7);
-
-            try {
-                const { error } = await supabaseClient
-                    .from('quiz_session')
-                    .insert([{ id: cloudId, data: sessionData }]);
-
-                if (error) {
-                    console.error("Error Supabase:", error);
-                    alert("Error al guardar la sesión en la base de datos.");
-                    btn.innerHTML = '<span>🚀 Crear Sesión en Vivo con Supabase</span>';
-                    btn.disabled = false;
-                    return;
-                }
-
-                initPresenterMode();
-            } catch (err) {
-                console.error("Fallo de red", err);
-                alert("Hubo un problema de conexión con Supabase.");
-                btn.innerHTML = '<span>🚀 Crear Sesión en Vivo con Supabase</span>';
-                btn.disabled = false;
-            }
+            $('user-email-display').textContent = email;
+            $('user-info').classList.remove('hidden');
+            $('user-info').classList.add('flex');
+            showView('view-setup');
+        } catch(e) {
+            await sb.auth.signOut();
+            showView('view-login');
         }
+    }
 
-        async function fetchCloudData(isPresenter) {
-            try {
-                const { data, error } = await supabaseClient
-                    .from('quiz_session')
-                    .select('data')
-                    .eq('id', cloudId)
-                    .single();
+    async function loginUser() {
+        const email    = $('login-email').value.trim();
+        const password = $('login-password').value;
+        const btn      = $('login-btn');
+        const errEl    = $('login-error');
 
-                if (data && data.data) {
-                    sessionData = data.data;
-                    if (isPresenter) {
-                        renderPresenterQuestion();
-                    } else {
-                        renderParticipantQuestion();
-                    }
-                }
-            } catch (e) {
-                console.warn("Error de sincronización", e);
-            }
+        if (!email || !password) {
+            errEl.textContent = 'Por favor ingresa tu correo y contraseña.';
+            errEl.classList.remove('hidden');
+            return;
         }
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Ingresando…';
+        errEl.classList.add('hidden');
 
-        async function pushCloudData() {
-            try {
-                await supabaseClient
-                    .from('quiz_session')
-                    .update({ data: sessionData })
-                    .eq('id', cloudId);
-            } catch (e) {
-                console.warn("Error al actualizar Supabase", e);
-            }
+        const { data, error } = await sb.auth.signInWithPassword({ email, password });
+        if (error) {
+            errEl.textContent = 'Correo o contraseña incorrectos.';
+            errEl.classList.remove('hidden');
+            btn.disabled = false;
+            btn.innerHTML = 'Ingresar';
+            return;
         }
+        btn.disabled = false;
+        btn.innerHTML = 'Ingresar';
+        await onAuthSuccess(email);
+    }
 
-        function initPresenterMode() {
-            document.getElementById('view-setup').classList.add('hidden');
-            document.getElementById('view-presenter').classList.remove('hidden');
-            document.getElementById('role-badge').textContent = 'Modo Presentador';
-            
-            renderPresenterQuestion();
-            initChart();
-            
-            const participantUrl = window.location.origin + window.location.pathname + '?id=' + cloudId;
-            document.getElementById('participant-link-input').value = participantUrl;
-            
-            const qrImageUrl = `https://quickchart.io/qr?text=${encodeURIComponent(participantUrl)}&size=250&margin=2&ecLevel=M`;
-            document.getElementById('qr-image-tag').src = qrImageUrl;
+    async function logoutUser() {
+        await sb.auth.signOut();
+        $('user-info').classList.add('hidden');
+        $('user-info').classList.remove('flex');
+        showView('view-login');
+    }
 
-            if (syncInterval) clearInterval(syncInterval);
-            syncInterval = setInterval(() => fetchCloudData(true), 1500);
-        }
+    // Iniciar verificando sesión
+    checkAuth();
 
-        function copyParticipantLink() {
-            const input = document.getElementById('participant-link-input');
-            input.select();
-            input.setSelectionRange(0, 99999);
-            navigator.clipboard.writeText(input.value);
-            alert("¡Enlace copiado al portapapeles!");
-        }
-
-        async function toggleRevealCorrect() {
-            sessionData.reveal = !sessionData.reveal;
-            updateRevealButton();
-            renderPresenterQuestion();
-            await pushCloudData();
-        }
-
-        function updateRevealButton() {
-            const btn = document.getElementById('btn-reveal');
-            if (sessionData.reveal) {
-                btn.className = "px-3 py-1.5 bg-amber-600 text-white rounded-xl text-xs font-semibold transition";
-                btn.innerHTML = '<i class="fa-solid fa-eye-slash mr-1"></i> Ocultar Respuesta';
-            } else {
-                btn.className = "px-3 py-1.5 bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-600/50 rounded-xl text-xs font-semibold transition";
-                btn.innerHTML = '<i class="fa-solid fa-eye mr-1"></i> Ver Respuesta';
+    // ── PARSER GOOGLE SHEETS ──────────────────────────────────────────────────
+    function parseSheetText(raw) {
+        const lines = raw.split(/\r\n|\n/).filter(l => l.trim());
+        const parsed = [];
+        let start = 0;
+        if (lines[0] && (lines[0].toLowerCase().includes('pregunta') || lines[0].toLowerCase().includes('question'))) start = 1;
+        for (let i = start; i < lines.length; i++) {
+            let cols = lines[i].split('\t');
+            if (cols.length < 2) cols = lines[i].split(',');
+            cols = cols.map(c => c.trim().replace(/^["']|["']$/g, ''));
+            if (cols.length >= 5) {
+                parsed.push({
+                    pregunta: cols[0],
+                    opcionA: cols[1] || '',
+                    opcionB: cols[2] || '',
+                    opcionC: cols[3] || '',
+                    opcionD: cols[4] || '',
+                    correcta: (cols[5] || 'A').toUpperCase().charAt(0)
+                });
             }
         }
+        return parsed;
+    }
 
-        function renderPresenterQuestion() {
-            const q = sessionData.questions[sessionData.currentIndex];
-            if (!q) return;
-            document.getElementById('presenter-question-text').textContent = q.pregunta;
-            document.getElementById('presenter-counter').textContent = `Pregunta ${sessionData.currentIndex + 1} / ${sessionData.questions.length}`;
-            updateRevealButton();
-            
-            const grid = document.getElementById('presenter-options-grid');
-            grid.innerHTML = ['A', 'B', 'C', 'D'].map(k => {
-                const text = q['opcion' + k];
-                if (!text) return '';
-                const isCorrect = sessionData.reveal && k === q.correcta;
-                const voteCount = sessionData.votes[sessionData.currentIndex + '_' + k] || 0;
-                return `
-                    <div class="p-4 rounded-xl border transition ${isCorrect ? 'bg-emerald-950/40 border-emerald-500 text-white' : 'bg-slate-800/90 border-slate-700 text-white'} shadow-md">
-                        <div class="flex justify-between items-center">
-                            <p class="font-bold"><span class="text-indigo-400">${k}:</span> ${text}</p>
-                            ${isCorrect ? '<span class="text-xs bg-emerald-500 text-slate-950 font-extrabold px-2 py-0.5 rounded">CORRECTA</span>' : ''}
-                        </div>
-                        <span class="text-xs text-slate-400 mt-1 block">${voteCount} votos</span>
-                    </div>
-                `;
-            }).join('');
-            if (chartInstance) updateChartData();
+    // ── CREAR SESIÓN ──────────────────────────────────────────────────────────
+    async function createCloudSession() {
+        const raw = $('sheet-text-input').value;
+        if (!raw.trim()) { alert('Por favor pega el contenido de tus celdas de Google Sheets.'); return; }
+        const questions = parseSheetText(raw);
+        if (!questions.length) { alert('No se pudieron interpretar las preguntas. Verifica el formato.'); return; }
+
+        const btn = $('btn-create');
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Guardando…';
+        btn.disabled = true;
+
+        const mode        = document.querySelector('input[name="session-mode"]:checked')?.value || 'quiz';
+        const timerSeconds= mode === 'quiz' ? (parseInt($('timer-select').value) || 0) : 0;
+        const examMinutes = mode === 'exam' ? (parseInt($('exam-minutes').value)  || 30) : 0;
+        const randomOrder = mode === 'exam' ? $('random-order').checked : false;
+        const name        = $('session-name-input').value.trim() || (mode === 'exam' ? 'Examen en Línea' : 'Cuestionario en Vivo');
+        cloudId = genId('s_');
+
+        // Estado inicial: 'lobby' — los participantes se registran antes de empezar
+        sessionData = { questions, currentIndex:0, votes:{}, voters:{}, participants:{}, participantVotes:{}, examSubmissions:{}, reveal:false, status:'lobby', mode, timerSeconds, examMinutes, randomOrder, name, questionChangedAt:0, examStartedAt:0 };
+
+        try {
+            const { error } = await sb.from('quiz_session').insert([{ id: cloudId, data: sessionData }]);
+            if (error) throw error;
+            isPresenter = true;
+            initPresenterLobby();   // ← va al lobby, no directo al cuestionario
+        } catch(err) {
+            console.error(err);
+            alert('Error al crear la sesión: ' + (err.message || err));
+            btn.innerHTML = '<span>🚀 Crear Sesión en Vivo</span>';
+            btn.disabled = false;
         }
+    }
 
-        function initChart() {
-            const ctx = document.getElementById('resultsChart').getContext('2d');
-            chartInstance = new Chart(ctx, {
-                type: 'bar',
-                data: { 
-                    labels: ['A', 'B', 'C', 'D'], 
-                    datasets: [{ 
-                        data: [0,0,0,0], 
-                        backgroundColor: ['#6366f1', '#8b5cf6', '#ec4899', '#3b82f6'],
-                        borderRadius: 8
-                    }] 
-                },
-                options: { 
-                    responsive: true, 
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
-                        x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
-                    }
-                }
-            });
+    // ── LOBBY PRESENTADOR ────────────────────────────────────────────────────
+    function initPresenterLobby() {
+        $('role-badge').textContent = 'Presentador';
+        $('lobby-session-title').textContent = sessionData.name;
+        showView('view-lobby-presenter');
+
+        const url = location.origin + location.pathname + '?id=' + cloudId;
+        $('lobby-link').value = url;
+        $('lobby-qr').src = `https://quickchart.io/qr?text=${encodeURIComponent(url)}&size=240&margin=2&ecLevel=M`;
+
+        // Polling para actualizar lista de asistencia en tiempo real
+        subscribeRealtime(true);
+        startPolling(true);
+    }
+
+    function renderLobbyList() {
+        const parts = sessionData.participants || {};
+        const names = Object.values(parts);
+        $('lobby-count').textContent = names.length;
+        $('lobby-participants-list').innerHTML = names.length === 0
+            ? '<p class="text-slate-500 italic">Esperando participantes…</p>'
+            : names.map(n => `
+                <div class="flex items-center space-x-2 py-1 border-b border-slate-700/40">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 pulse-dot"></span>
+                    <span class="truncate">${n}</span>
+                </div>`).join('');
+    }
+
+    function copyLobbyLink() {
+        const val = $('lobby-link').value;
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(val).then(() => alert('¡Enlace copiado!')).catch(() => { $('lobby-link').select(); document.execCommand('copy'); alert('¡Enlace copiado!'); });
+        } else { $('lobby-link').select(); document.execCommand('copy'); alert('¡Enlace copiado!'); }
+    }
+
+    async function startQuiz() {
+        if (sessionData.mode === 'exam') {
+            sessionData.status       = 'exam-active';
+            sessionData.examStartedAt = Date.now();
+        } else {
+            sessionData.status           = 'active';
+            sessionData.currentIndex     = 0;
+            sessionData.reveal           = false;
+            sessionData.questionChangedAt = Date.now();
         }
-
-        function updateChartData() {
-            if (!chartInstance) return;
-            chartInstance.data.datasets[0].data = ['A', 'B', 'C', 'D'].map(k => sessionData.votes[sessionData.currentIndex + '_' + k] || 0);
-            chartInstance.update();
+        await push();
+        if (sessionData.mode === 'exam') {
+            initExamPresenter();
+        } else {
+            initPresenterMode();
         }
+    }
 
-        async function nextQuestion() { 
-            if(sessionData.currentIndex < sessionData.questions.length - 1) { 
-                sessionData.currentIndex++; 
-                sessionData.reveal = false;
-                renderPresenterQuestion(); 
-                await pushCloudData();
-            } 
+    // ── MODO PRESENTADOR ──────────────────────────────────────────────────────
+    function initPresenterMode() {
+        $('role-badge').textContent = 'Presentador';
+        $('session-title-display').textContent = sessionData.name;
+        showView('view-presenter');
+        initChart();
+        renderPresenterQuestion();
+
+        const url = location.origin + location.pathname + '?id=' + cloudId;
+        $('participant-link-input').value = url;
+        $('qr-image-tag').src = `https://quickchart.io/qr?text=${encodeURIComponent(url)}&size=240&margin=2&ecLevel=M`;
+
+        // Realtime + polling ya pueden estar corriendo desde el lobby; no duplicar
+        if (!fallbackInt) {
+            subscribeRealtime(true);
+            startPolling(true);
         }
+        if (sessionData.timerSeconds > 0) startTimer(sessionData.timerSeconds, true);
+    }
 
-        async function prevQuestion() { 
-            if(sessionData.currentIndex > 0) { 
-                sessionData.currentIndex--; 
-                sessionData.reveal = false;
-                renderPresenterQuestion(); 
-                await pushCloudData();
-            } 
-        }
+    function renderPresenterQuestion() {
+        const q = sessionData.questions[sessionData.currentIndex];
+        if (!q) return;
 
-        function resetApp() { window.location.href = window.location.pathname; }
+        $('presenter-question-text').textContent = q.pregunta;
+        $('presenter-counter').textContent = `Pregunta ${sessionData.currentIndex + 1} / ${sessionData.questions.length}`;
+        updateRevealBtn();
 
-        // --- MODO PARTICIPANTE (CELULAR) ---
-        window.onload = async () => {
-            const params = new URLSearchParams(window.location.search);
-            cloudId = params.get('id');
-
-            if (cloudId) {
-                document.getElementById('view-setup').classList.add('hidden');
-                document.getElementById('view-participant').classList.remove('hidden');
-                document.getElementById('role-badge').textContent = 'Modo Participante';
-
-                await fetchCloudData(false);
-
-                if (!sessionData.questions || sessionData.questions.length === 0) {
-                    document.getElementById('mobile-question-text').textContent = "Sesión no encontrada o expirada. Pide al presentador el enlace actualizado.";
-                    return;
-                }
-
-                renderParticipantQuestion();
-
-                setInterval(() => fetchCloudData(false), 1500);
-            }
-        };
-
-        function renderParticipantQuestion() {
-            const q = sessionData.questions[sessionData.currentIndex];
-            if (!q) return;
-            document.getElementById('participant-counter').textContent = `Pregunta ${sessionData.currentIndex + 1} / ${sessionData.questions.length}`;
-            document.getElementById('mobile-question-text').textContent = q.pregunta;
-            
-            const container = document.getElementById('mobile-options-container');
-            
-            // Verificamos si este dispositivo ya votó en esta pregunta específica usando localStorage
-            const voteId = `voted_${cloudId}_${sessionData.currentIndex}`;
-            const alreadyVotedOption = localStorage.getItem(voteId);
-
-            if (alreadyVotedOption) {
-                container.innerHTML = `
-                    <div class="p-6 bg-slate-800 rounded-2xl text-center space-y-2 border border-slate-700 shadow-xl">
-                        <p class="text-indigo-400 font-bold">¡Ya has votado en esta pregunta (Opción ${alreadyVotedOption})!</p>
-                        <p class="text-xs text-slate-400">Espera a que el presentador avance a la siguiente pregunta.</p>
-                    </div>
-                `;
-                document.getElementById('vote-feedback').classList.remove('hidden');
-                return;
-            }
-
-            document.getElementById('vote-feedback').classList.add('hidden');
-            container.innerHTML = ['A', 'B', 'C', 'D'].map(k => {
-                const text = q['opcion' + k];
-                if (!text) return '';
-                return `
-                    <button onclick="submitVote('${k}')" class="w-full p-4 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-bold text-white shadow-lg transition text-left flex items-center justify-between">
-                        <span><strong class="text-indigo-200">${k}:</strong> ${text}</span>
-                        <i class="fa-solid fa-chevron-right text-xs"></i>
-                    </button>
-                `;
-            }).join('');
-        }
-
-        async function submitVote(k) {
-            const voteId = `voted_${cloudId}_${sessionData.currentIndex}`;
-            
-            // Doble validación en cliente para evitar envío duplicado
-            if (localStorage.getItem(voteId)) {
-                alert("¡Ya has registrado tu voto en esta pregunta!");
-                return;
-            }
-
-            await fetchCloudData(false);
-            
-            const voteKey = sessionData.currentIndex + '_' + k;
-            sessionData.votes[voteKey] = (sessionData.votes[voteKey] || 0) + 1;
-
-            await pushCloudData();
-
-            // Guardamos el registro en localStorage para este dispositivo/pregunta
-            localStorage.setItem(voteId, k);
-
-            document.getElementById('mobile-options-container').innerHTML = `
-                <div class="p-6 bg-slate-800 rounded-2xl text-center space-y-2 border border-slate-700 shadow-xl">
-                    <p class="text-indigo-400 font-bold">¡Voto registrado para la opción ${k}!</p>
-                    <p class="text-xs text-slate-400">Tu respuesta se ha sincronizado con la pantalla del presentador.</p>
+        const total = ['A','B','C','D'].reduce((s,k) => s + (sessionData.votes[sessionData.currentIndex+'_'+k] || 0), 0);
+        $('presenter-options-grid').innerHTML = ['A','B','C','D'].map(k => {
+            const text = q['opcion'+k];
+            if (!text) return '';
+            const isOk   = sessionData.reveal && k === q.correcta;
+            const count  = sessionData.votes[sessionData.currentIndex+'_'+k] || 0;
+            const pct    = total > 0 ? Math.round(count/total*100) : 0;
+            return `
+            <div class="p-4 rounded-xl border transition shadow-md ${isOk ? 'bg-emerald-950/40 border-emerald-500' : 'bg-slate-800/90 border-slate-700'}">
+                <div class="flex justify-between items-center mb-2 gap-2">
+                    <p class="font-bold text-sm leading-snug"><span class="text-indigo-400">${k}:</span> ${text}</p>
+                    ${isOk ? '<span class="text-xs bg-emerald-500 text-slate-950 font-extrabold px-2 py-0.5 rounded shrink-0">CORRECTA</span>' : ''}
                 </div>
-            `;
-            document.getElementById('vote-feedback').classList.remove('hidden');
+                <div class="flex items-center space-x-2">
+                    <div class="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                        <div class="h-full rounded-full transition-all duration-500 ${isOk ? 'bg-emerald-400' : 'bg-indigo-500'}" style="width:${pct}%"></div>
+                    </div>
+                    <span class="text-xs text-slate-400 font-semibold shrink-0">${count} (${pct}%)</span>
+                </div>
+            </div>`;
+        }).join('');
+
+        updateParticipantsList();
+        if (chartInst) updateChart();
+    }
+
+    function updateParticipantsList() {
+        const parts = sessionData.participants || {};
+        const names = Object.values(parts);
+        $('participants-count').textContent = names.length;
+        $('participants-list').innerHTML = names.length === 0
+            ? '<p class="text-slate-500 italic">Esperando participantes…</p>'
+            : names.map(n => `
+                <div class="flex items-center space-x-2 py-1 border-b border-slate-700/40">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 pulse-dot"></span>
+                    <span class="truncate">${n}</span>
+                </div>`).join('');
+    }
+
+    function updateRevealBtn() {
+        const btn = $('btn-reveal');
+        if (sessionData.reveal) {
+            btn.className = 'shrink-0 px-3 py-1.5 bg-amber-500 text-slate-900 rounded-xl text-xs font-semibold transition whitespace-nowrap';
+            btn.innerHTML = '<i class="fa-solid fa-eye-slash mr-1"></i>Ocultar';
+        } else {
+            btn.className = 'shrink-0 px-3 py-1.5 bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-600/50 rounded-xl text-xs font-semibold transition whitespace-nowrap';
+            btn.innerHTML = '<i class="fa-solid fa-eye mr-1"></i>Ver Respuesta';
         }
+    }
+
+    async function toggleReveal() {
+        sessionData.reveal = !sessionData.reveal;
+        updateRevealBtn();
+        renderPresenterQuestion();
+        await push();
+    }
+
+    async function nextQuestion() {
+        if (sessionData.currentIndex < sessionData.questions.length - 1) {
+            sessionData.currentIndex++;
+            sessionData.reveal = false;
+            sessionData.questionChangedAt = Date.now();
+            renderPresenterQuestion();
+            await push();
+            if (sessionData.timerSeconds > 0) startTimer(sessionData.timerSeconds, true);
+        }
+    }
+
+    async function prevQuestion() {
+        if (sessionData.currentIndex > 0) {
+            sessionData.currentIndex--;
+            sessionData.reveal = false;
+            sessionData.questionChangedAt = Date.now();
+            renderPresenterQuestion();
+            await push();
+            if (sessionData.timerSeconds > 0) startTimer(sessionData.timerSeconds, true);
+        }
+    }
+
+    async function endSession() {
+        if (!confirm('¿Deseas finalizar la sesión? Los participantes verán sus resultados.')) return;
+        sessionData.status = 'ended';
+        await push();
+        // Limpiar registro de Supabase después de 5 minutos
+        setTimeout(async () => {
+            try { await sb.from('quiz_session').delete().eq('id', cloudId); } catch(_) {}
+        }, 300000);
+        // Parar polling
+        if (fallbackInt) { clearInterval(fallbackInt); fallbackInt = null; }
+        renderEndPresenter();
+    }
+
+    // ── CÁLCULO DE CALIFICACIONES ─────────────────────────────────────────────
+    function calculateScores() {
+        const questions      = sessionData.questions;
+        const participants   = sessionData.participants   || {};
+        const participantVotes = sessionData.participantVotes || {};
+        const total          = questions.length;
+
+        const scores = Object.entries(participants).map(([pid, nick]) => {
+            const pvotes  = participantVotes[pid] || {};
+            let correct   = 0;
+            questions.forEach((q, idx) => {
+                if (pvotes[String(idx)] === q.correcta) correct++;
+            });
+            const nota = total > 0 ? Math.round((correct / total) * 100) / 10 : 0;
+            return { pid, nick, correct, total, nota };
+        });
+
+        scores.sort((a, b) => b.nota - a.nota);
+        const avg = scores.length > 0
+            ? Math.round(scores.reduce((s, x) => s + x.nota, 0) / scores.length * 10) / 10
+            : 0;
+        return { scores, avg };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  MODO EXAMEN
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // Estado local del examen (solo para el participante)
+    let examOrder    = [];   // array de índices originales en el orden asignado
+    let examPos      = 0;    // posición actual dentro de examOrder
+    let examAnswers  = {};   // { originalIdx: 'A'|'B'|'C'|'D' }
+    let examTimerInt = null;
+    let examTotalSecs = 0;
+    let examWarned   = false;
+    let examSubmitted = false;
+
+    // ── Shuffle (Fisher-Yates) ─────────────────────────────────────────────────
+    function shuffleIndices(n) {
+        const arr = Array.from({ length: n }, (_, i) => i);
+        for (let i = n - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        return arr;
+    }
+
+    // ── Formatear mm:ss ───────────────────────────────────────────────────────
+    function fmtTime(secs) {
+        const m = Math.floor(Math.max(0, secs) / 60).toString().padStart(2, '0');
+        const s = (Math.max(0, secs) % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+    }
+
+    // ── Presentador: iniciar vista del examen ─────────────────────────────────
+    function initExamPresenter() {
+        $('role-badge').textContent = 'Presentador';
+        $('exam-session-title').textContent = sessionData.name;
+        showView('view-exam-presenter');
+        subscribeRealtime(true);
+        startPolling(true);
+
+        examTotalSecs = sessionData.examMinutes * 60;
+        const startedAt = sessionData.examStartedAt;
+
+        if (examTimerInt) clearInterval(examTimerInt);
+        examTimerInt = setInterval(() => {
+            const elapsed  = Math.floor((Date.now() - startedAt) / 1000);
+            const left     = Math.max(0, examTotalSecs - elapsed);
+            $('exam-timer-display').textContent = fmtTime(left);
+            const pct = left / examTotalSecs * 100;
+            const bar = $('exam-timer-bar');
+            if (bar) bar.style.width = pct + '%';
+            if (bar) bar.className = `h-full rounded-full transition-all duration-1000 ${pct > 30 ? 'bg-indigo-500' : pct > 10 ? 'bg-amber-500' : 'bg-red-500'}`;
+            // Actualizar conteo de entregas
+            const subs  = Object.keys(sessionData.examSubmissions || {}).length;
+            const total = Object.keys(sessionData.participants     || {}).length;
+            $('exam-submitted-count').textContent = subs;
+            $('exam-total-count').textContent     = total;
+            // Finalizar automáticamente cuando el tiempo llega a 0
+            if (left === 0) {
+                clearInterval(examTimerInt);
+                endExamEarly();
+            }
+        }, 1000);
+    }
+
+    async function endExamEarly() {
+        if (sessionData.status === 'ended') return;
+        sessionData.status = 'ended';
+        await push();
+        clearInterval(examTimerInt);
+        clearInterval(fallbackInt); fallbackInt = null;
+        renderEndPresenter();
+    }
+
+    // ── Participante: iniciar examen ──────────────────────────────────────────
+    function initExamParticipant() {
+        showView('view-exam-participant');
+        examSubmitted = false;
+        examWarned    = false;
+        examAnswers   = {};
+        examPos       = 0;
+        examTotalSecs = sessionData.examMinutes * 60;
+
+        // Generar orden (aleatorio o secuencial)
+        examOrder = sessionData.randomOrder
+            ? shuffleIndices(sessionData.questions.length)
+            : Array.from({ length: sessionData.questions.length }, (_, i) => i);
+
+        // Iniciar cronómetro sincronizado con examStartedAt
+        const startedAt = sessionData.examStartedAt;
+        if (examTimerInt) clearInterval(examTimerInt);
+        examTimerInt = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+            const left    = Math.max(0, examTotalSecs - elapsed);
+            $('exam-participant-timer').textContent = fmtTime(left);
+            // Aviso al minuto final
+            if (left <= 60 && !examWarned) {
+                examWarned = true;
+                $('exam-warning-banner').classList.remove('hidden');
+            }
+            // Tiempo agotado → entrega automática
+            if (left === 0 && !examSubmitted) {
+                clearInterval(examTimerInt);
+                autoSubmitExam();
+            }
+        }, 1000);
+
+        renderExamQuestion();
+    }
+
+    // ── Renderizar pregunta del examen ────────────────────────────────────────
+    function renderExamQuestion() {
+        const totalQ   = examOrder.length;
+        const origIdx  = examOrder[examPos];
+        const q        = sessionData.questions[origIdx];
+        if (!q) return;
+
+        $('exam-progress-label').textContent  = `Pregunta ${examPos + 1} / ${totalQ}`;
+        $('exam-question-num').textContent    = `Pregunta ${examPos + 1} de ${totalQ}`;
+        $('exam-question-text').textContent   = q.pregunta;
+
+        const selected = examAnswers[origIdx];
+        $('exam-options-container').innerHTML = ['A','B','C','D'].map(k => {
+            const text = q['opcion' + k];
+            if (!text) return '';
+            const isSelected = selected === k;
+            return `
+            <button onclick="selectExamOption('${k}')"
+                class="w-full p-3.5 rounded-xl text-left font-semibold text-sm transition border ${
+                    isSelected
+                        ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-500/20'
+                        : 'bg-slate-700/60 border-slate-600 text-slate-200 hover:bg-slate-600 hover:border-slate-500'
+                } flex items-center space-x-3">
+                <span class="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-extrabold shrink-0 ${
+                    isSelected ? 'bg-white/20' : 'bg-slate-600'
+                }">${k}</span>
+                <span>${text}</span>
+            </button>`;
+        }).join('');
+
+        // Actualizar indicadores de puntos
+        $('exam-dot-nav').innerHTML = examOrder.map((oi, pos) => {
+            const ans     = examAnswers[oi];
+            const isCurrent = pos === examPos;
+            const color   = isCurrent
+                ? 'bg-indigo-500 ring-2 ring-indigo-300'
+                : ans ? 'bg-emerald-500' : 'bg-slate-600';
+            return `<button onclick="examJumpTo(${pos})"
+                class="w-5 h-5 rounded-full ${color} transition hover:opacity-80" title="Pregunta ${pos+1}"></button>`;
+        }).join('');
+    }
+
+    function selectExamOption(k) {
+        if (examSubmitted) return;
+        const origIdx = examOrder[examPos];
+        examAnswers[origIdx] = k;
+        renderExamQuestion();
+    }
+
+    function examNav(delta) {
+        const newPos = examPos + delta;
+        if (newPos < 0 || newPos >= examOrder.length) return;
+        examPos = newPos;
+        renderExamQuestion();
+    }
+
+    function examJumpTo(pos) {
+        examPos = pos;
+        renderExamQuestion();
+    }
+
+    async function submitExam() {
+        const answered  = Object.keys(examAnswers).length;
+        const total     = sessionData.questions.length;
+        const remaining = total - answered;
+        if (remaining > 0) {
+            if (!confirm(`Tienes ${remaining} pregunta${remaining > 1 ? 's' : ''} sin responder. ¿Deseas entregar el examen de todas formas?`)) return;
+        }
+        await doSubmitExam();
+    }
+
+    async function autoSubmitExam() {
+        if (examSubmitted) return;
+        await doSubmitExam();
+    }
+
+    async function doSubmitExam() {
+        examSubmitted = true;
+        if (examTimerInt) { clearInterval(examTimerInt); examTimerInt = null; }
+
+        // Recuperar datos frescos para no sobreescribir otros participantes
+        const latest = await fetchData();
+        if (latest) sessionData = latest;
+
+        // Guardar respuestas del participante
+        sessionData.participantVotes = sessionData.participantVotes || {};
+        sessionData.participantVotes[participantId] = {};
+        Object.entries(examAnswers).forEach(([idx, opt]) => {
+            sessionData.participantVotes[participantId][idx] = opt;
+        });
+
+        // Marcar como entregado
+        sessionData.examSubmissions = sessionData.examSubmissions || {};
+        sessionData.examSubmissions[participantId] = { submittedAt: Date.now() };
+
+        await push();
+        renderEndParticipant();  // mostrar resultados
+    }
+
+    // ── Alternar opciones en setup ────────────────────────────────────────────
+    function toggleModeOptions() {
+        const mode = document.querySelector('input[name="session-mode"]:checked')?.value;
+        $('quiz-options').classList.toggle('hidden', mode !== 'quiz');
+        $('exam-options').classList.toggle('hidden', mode !== 'exam');
+    }
+
+    // ── PANTALLA FINAL: PRESENTADOR ───────────────────────────────────────────
+    function renderEndPresenter() {
+        showView('view-ended');
+        const { scores, avg } = calculateScores();
+        const bestNota = scores.length > 0 ? scores[0].nota : 0;
+
+        const rows = scores.map((s, i) => {
+            const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
+            const barW  = Math.round(s.nota / 10 * 100);
+            const color = s.nota >= 7 ? 'bg-emerald-500' : s.nota >= 5 ? 'bg-amber-400' : 'bg-red-500';
+            return `
+            <tr class="border-b border-slate-700/50">
+                <td class="py-2 pr-3 text-slate-400 w-8 text-center text-sm">${medal}</td>
+                <td class="py-2 pr-3 text-sm font-medium text-white">${s.nick}</td>
+                <td class="py-2 pr-3 text-xs text-slate-400">${s.correct}/${s.total} correctas</td>
+                <td class="py-2 w-32">
+                    <div class="flex items-center space-x-2">
+                        <div class="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                            <div class="h-full rounded-full ${color}" style="width:${barW}%"></div>
+                        </div>
+                        <span class="text-sm font-bold text-white w-8 text-right">${s.nota.toFixed(1)}</span>
+                    </div>
+                </td>
+            </tr>`;
+        }).join('');
+
+        // Resumen por pregunta
+        const qRows = sessionData.questions.map((q, idx) => {
+            const total = ['A','B','C','D'].reduce((s,k) => s + (sessionData.votes[idx+'_'+k] || 0), 0);
+            const opts  = ['A','B','C','D'].map(k => {
+                const c = sessionData.votes[idx+'_'+k] || 0;
+                const pct = total > 0 ? Math.round(c/total*100) : 0;
+                const ok  = k === q.correcta;
+                return `<span class="${ok ? 'text-emerald-400 font-bold' : 'text-slate-400'}">${k}:${c}${ok ? '✓' : ''}</span>`;
+            }).join(' ');
+            return `<tr class="border-b border-slate-700/30 text-xs">
+                <td class="py-1.5 pr-2 text-slate-300">${idx+1}. ${q.pregunta.length > 50 ? q.pregunta.substring(0,50)+'…' : q.pregunta}</td>
+                <td class="py-1.5 text-right">${opts}</td>
+            </tr>`;
+        }).join('');
+
+        $('ended-content').innerHTML = `
+            <div class="space-y-6 w-full fade-in">
+                <div class="text-center space-y-1">
+                    <div class="text-4xl">🏁</div>
+                    <h2 class="text-2xl font-extrabold text-white">Resultados de la Sesión</h2>
+                    <p class="text-slate-400 text-sm">${sessionData.name}</p>
+                </div>
+
+                <!-- Stat cards -->
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 text-center">
+                        <p class="text-3xl font-extrabold text-indigo-400">${Object.keys(sessionData.participants||{}).length}</p>
+                        <p class="text-xs text-slate-400 mt-1">Participantes</p>
+                    </div>
+                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 text-center">
+                        <p class="text-3xl font-extrabold text-emerald-400">${avg.toFixed(1)}</p>
+                        <p class="text-xs text-slate-400 mt-1">Nota promedio</p>
+                    </div>
+                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 text-center">
+                        <p class="text-3xl font-extrabold text-amber-400">${bestNota.toFixed(1)}</p>
+                        <p class="text-xs text-slate-400 mt-1">Nota más alta</p>
+                    </div>
+                </div>
+
+                <!-- Ranking participantes -->
+                <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl">
+                    <div class="flex items-center justify-between mb-3">
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Ranking de participantes</p>
+                        <label class="flex items-center space-x-2 cursor-pointer text-xs text-slate-400">
+                            <input type="checkbox" id="toggle-public-scores" checked
+                                onchange="document.getElementById('public-scores-table').classList.toggle('hidden', !this.checked)"
+                                class="accent-indigo-500 w-3.5 h-3.5">
+                            <span>Mostrar ranking (pantalla proyectada)</span>
+                        </label>
+                    </div>
+                    <div id="public-scores-table">
+                    ${scores.length === 0
+                        ? '<p class="text-slate-500 italic text-sm">No hubo participantes registrados.</p>'
+                        : `<table class="w-full"><tbody>${rows}</tbody></table>`}
+                    </div><!-- /public-scores-table -->
+                </div>
+
+                <!-- Resumen por pregunta -->
+                <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl">
+                    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Distribución de respuestas por pregunta</p>
+                    <table class="w-full"><tbody>${qRows}</tbody></table>
+                </div>
+
+                <button onclick="resetApp()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">
+                    Volver al inicio
+                </button>
+            </div>`;
+    }
+
+    // ── PANTALLA FINAL: PARTICIPANTE ──────────────────────────────────────────
+    function renderEndParticipant() {
+        showView('view-ended');
+        const { scores, avg } = calculateScores();
+        const myScore  = scores.find(s => s.pid === participantId);
+        const bestNota = scores.length > 0 ? scores[0].nota : 0;
+
+        let msg = '', msgColor = '';
+        if (!myScore) {
+            msg = 'No hay datos de tu participación registrados.';
+            msgColor = 'text-slate-400';
+        } else if (myScore.nota === bestNota && scores.filter(s => s.nota === bestNota).length === 1) {
+            msg = '🏆 ¡Felicitaciones! ¡Obtuviste la mejor nota del salón!';
+            msgColor = 'text-amber-400';
+        } else if (myScore.nota > avg) {
+            msg = '🌟 ¡Felicitaciones! Tu nota está por encima del promedio del salón.';
+            msgColor = 'text-emerald-400';
+        } else if (Math.abs(myScore.nota - avg) < 0.05) {
+            msg = '👍 Obtuviste exactamente la nota promedio del salón.';
+            msgColor = 'text-indigo-300';
+        } else {
+            msg = '📚 Tu nota está por debajo del promedio. ¡No te desanimes! Con un poco más de estudio y atención lo lograrás.';
+            msgColor = 'text-amber-300';
+        }
+
+        const notaColor = myScore
+            ? (myScore.nota >= 7 ? 'text-emerald-400' : myScore.nota >= 5 ? 'text-amber-400' : 'text-red-400')
+            : 'text-slate-400';
+
+        $('ended-content').innerHTML = `
+            <div class="space-y-5 w-full max-w-sm mx-auto fade-in">
+                <div class="text-center space-y-1">
+                    <div class="text-4xl">🏁</div>
+                    <h2 class="text-2xl font-extrabold text-white">¡Sesión finalizada!</h2>
+                    <p class="text-slate-400 text-sm">${sessionData.name}</p>
+                </div>
+
+                <!-- Nota personal -->
+                <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 text-center shadow-xl space-y-2">
+                    <p class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Tu calificación</p>
+                    <p class="text-7xl font-extrabold ${notaColor}">${myScore ? myScore.nota.toFixed(1) : '—'}</p>
+                    <p class="text-sm text-slate-400">${myScore ? `${myScore.correct} de ${myScore.total} respuestas correctas` : ''}</p>
+                </div>
+
+                <!-- Nota promedio -->
+                <div class="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Promedio del salón</p>
+                        <p class="text-2xl font-extrabold text-indigo-300">${avg.toFixed(1)}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Mejor nota</p>
+                        <p class="text-2xl font-extrabold text-amber-400">${bestNota.toFixed(1)}</p>
+                    </div>
+                </div>
+
+                <!-- Mensaje personalizado -->
+                <div class="bg-slate-800/40 border border-slate-700/40 rounded-2xl p-4 text-center">
+                    <p class="text-sm font-semibold ${msgColor}">${msg}</p>
+                </div>
+
+                <!-- Revisión pregunta a pregunta -->
+                <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl space-y-3">
+                    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Revisión de respuestas</p>
+                    ${sessionData.questions.map((q, idx) => {
+                        const myVote  = myScore ? (sessionData.participantVotes?.[participantId]?.[String(idx)] || null) : null;
+                        const correct  = q.correcta;
+                        const answered = myVote !== null;
+                        const isOk     = myVote === correct;
+                        const icon     = !answered ? '⬜' : isOk ? '✅' : '❌';
+                        const opts     = ['A','B','C','D'].map(k => {
+                            const text = q['opcion'+k]; if (!text) return '';
+                            const isMine = k === myVote;
+                            const isCorr = k === correct;
+                            return `<span class="inline-block px-2 py-0.5 rounded text-xs mr-1 mb-1 ${
+                                isCorr ? 'bg-emerald-700 text-emerald-100 font-bold'
+                                : isMine ? 'bg-red-800 text-red-200'
+                                : 'bg-slate-700 text-slate-400'
+                            }">${k}: ${text.length > 25 ? text.substring(0,25)+'…' : text}</span>`;
+                        }).join('');
+                        return `<div class="border-b border-slate-700/40 pb-2">
+                            <p class="text-xs font-semibold text-slate-300 mb-1">${icon} ${idx+1}. ${q.pregunta}</p>
+                            <div>${opts}</div>
+                            ${!answered ? '<p class="text-xs text-slate-500 italic">Sin respuesta</p>' : ''}
+                        </div>`;
+                    }).join('')}
+                </div>
+
+                <button onclick="resetApp()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">
+                    Volver al inicio
+                </button>
+            </div>`;
+    }
+
+    function copyLink() {
+        const val = $('participant-link-input').value;
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(val).then(() => alert('¡Enlace copiado!')).catch(() => fallbackCopy(val));
+        } else fallbackCopy(val);
+    }
+    function fallbackCopy(val) {
+        const el = $('participant-link-input');
+        el.select(); el.setSelectionRange(0, 99999);
+        document.execCommand('copy');
+        alert('¡Enlace copiado!');
+    }
+
+    function resetApp() { location.href = location.pathname; }
+
+    // ── GRÁFICO ───────────────────────────────────────────────────────────────
+    function initChart() {
+        const ctx = $('resultsChart').getContext('2d');
+        chartInst = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['A','B','C','D'],
+                datasets: [{ data:[0,0,0,0], backgroundColor:['#6366f1','#8b5cf6','#ec4899','#3b82f6'], borderRadius:8 }]
+            },
+            options: {
+                responsive:true, maintainAspectRatio:false,
+                plugins: { legend:{ display:false } },
+                scales: {
+                    y: { beginAtZero:true, ticks:{ color:'#94a3b8', stepSize:1 }, grid:{ color:'#334155' } },
+                    x: { ticks:{ color:'#94a3b8' }, grid:{ display:false } }
+                }
+            }
+        });
+    }
+
+    function updateChart() {
+        chartInst.data.datasets[0].data = ['A','B','C','D'].map(k => sessionData.votes[sessionData.currentIndex+'_'+k] || 0);
+        chartInst.update('active');
+    }
+
+    // ── TIMER ─────────────────────────────────────────────────────────────────
+    function startTimer(totalSecs, presenterSide) {
+        if (timerInt) clearInterval(timerInt);
+        let left = totalSecs;
+        const barId  = presenterSide ? 'p-timer-bar'  : 'pt-timer-bar';
+        const wrapId = presenterSide ? 'p-timer-wrap'  : 'pt-timer-wrap';
+        const lblId  = 'p-timer-label';
+
+        $(wrapId).classList.remove('hidden');
+        if (presenterSide && $(lblId)) $(lblId).textContent = left;
+
+        timerInt = setInterval(() => {
+            left = Math.max(0, left - 1);
+            const pct = left / totalSecs * 100;
+            const bar = $(barId);
+            if (bar) {
+                bar.style.width = pct + '%';
+                bar.className = `h-full timer-bar rounded-full ${pct > 50 ? 'bg-indigo-500' : pct > 20 ? 'bg-amber-500' : 'bg-red-500'}`;
+            }
+            if (presenterSide && $(lblId)) $(lblId).textContent = left;
+            if (left === 0) {
+                clearInterval(timerInt);
+                // El timer del presentador es solo de referencia: NO revela automáticamente.
+                // El presentador decide manualmente cuándo revelar o avanzar.
+                // El timer del participante sí deshabilita su votación personal al agotarse.
+                if (!presenterSide) participantTimeUp();
+            }
+        }, 1000);
+    }
+
+    /** Se llama cuando el timer personal del participante llega a cero. */
+    function participantTimeUp() {
+        const voteKey = `voted_${cloudId}_${sessionData.currentIndex}`;
+        if (localStorage.getItem(voteKey)) return; // ya votó, nada que hacer
+        const container = $('mobile-options-container');
+        if (!container) return;
+        container.innerHTML = `
+            <div class="p-5 bg-slate-800 rounded-2xl border border-red-800/60 text-center fade-in space-y-1">
+                <p class="text-2xl">⏱</p>
+                <p class="text-red-400 font-bold">¡Tiempo agotado!</p>
+                <p class="text-xs text-slate-400">No alcanzaste a registrar tu respuesta en esta pregunta.</p>
+            </div>`;
+    }
+
+    /** Inicia el timer del participante con el tiempo SINCRONIZADO al servidor.
+     *  Como todos los participantes están en el lobby antes de que empiece el cuestionario,
+     *  el elapsed es mínimo y el timer es prácticamente igual para todos. */
+    function startParticipantTimer(totalSecs, changedAt) {
+        if (!totalSecs || !changedAt) return;
+        const elapsed   = Math.floor((Date.now() - changedAt) / 1000);
+        const remaining = Math.max(0, totalSecs - elapsed);
+        if (remaining > 0) startTimer(remaining, false);
+        else participantTimeUp();
+    }
+
+    // ── SUPABASE PUSH / FETCH ─────────────────────────────────────────────────
+    async function push() {
+        try {
+            const { error } = await sb.from('quiz_session').update({ data: sessionData }).eq('id', cloudId);
+            if (error) console.warn('[IPOS] push error:', error.message, '| code:', error.code, '| hint:', error.hint);
+        } catch(e) { console.warn('[IPOS] push exception', e); }
+    }
+
+    async function fetchData() {
+        try {
+            const { data, error } = await sb.from('quiz_session').select('data').eq('id', cloudId).single();
+            if (error) { console.warn('[IPOS] fetch error:', error.message, '| code:', error.code); return null; }
+            if (data?.data) return data.data;
+        } catch(e) { console.warn('[IPOS] fetch exception', e); }
+        return null;
+    }
+
+    // ── FUSIÓN INTELIGENTE PARA EL PRESENTADOR ────────────────────────────────
+    // El presentador NUNCA debe perder su propio estado (currentIndex, reveal,
+    // status, timerSeconds) por una actualización remota de un participante.
+    // Solo se fusionan los campos que los participantes pueden modificar.
+    function mergeForPresenter(incoming) {
+        sessionData.votes            = incoming.votes            || {};
+        sessionData.voters           = incoming.voters           || {};
+        sessionData.participants     = incoming.participants     || {};
+        sessionData.participantVotes = incoming.participantVotes || {};
+        sessionData.examSubmissions  = incoming.examSubmissions  || {};
+    }
+
+    // ── SUPABASE REALTIME ─────────────────────────────────────────────────────
+    function subscribeRealtime(presenterSide) {
+        if (rtChannel) sb.removeChannel(rtChannel);
+
+        rtChannel = sb
+            .channel('ipos_' + cloudId)
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'quiz_session',
+                filter: `id=eq.${cloudId}`
+            }, payload => {
+                if (!payload.new?.data) return;
+                if (!rtConnected) {
+                    rtConnected = true;
+                    $('rt-indicator').classList.remove('hidden');
+                    $('rt-indicator').classList.add('flex');
+                }
+                const incoming = payload.new.data;
+                if (presenterSide) {
+                    mergeForPresenter(incoming);   // fusión selectiva
+                    renderPresenterQuestion();
+                } else {
+                    handleParticipantUpdate(incoming);
+                }
+            })
+            .subscribe();
+    }
+
+    // ── POLLING PRINCIPAL (siempre activo) ────────────────────────────────────
+    function startPolling(presenterSide) {
+        if (fallbackInt) clearInterval(fallbackInt);
+
+        $('poll-indicator').classList.remove('hidden');
+        $('poll-indicator').classList.add('flex');
+
+        fallbackInt = setInterval(async () => {
+            const data = await fetchData();
+            if (!data) return;
+            if (presenterSide) {
+                mergeForPresenter(data);           // fusión selectiva — no sobreescribe currentIndex ni reveal
+                // Si seguimos en el lobby, actualizar lista de asistencia; si ya en quiz, renderizar pregunta
+                if (sessionData.status === 'lobby') {
+                    renderLobbyList();
+                } else {
+                    renderPresenterQuestion();
+                }
+            } else {
+                handleParticipantUpdate(data);
+            }
+        }, 1500); // Consulta Supabase cada 1.5 segundos
+    }
+
+    // ── MODO PARTICIPANTE ─────────────────────────────────────────────────────
+    window.onload = async () => {
+        const params = new URLSearchParams(location.search);
+        cloudId = params.get('id');
+        if (!cloudId) return; // Modo presentador: espera en pantalla de configuración
+
+        participantId = getParticipantId();
+        $('role-badge').textContent = 'Participante';
+
+        // Pre-cargar datos de la sesión
+        const data = await fetchData();
+        if (!data) {
+            showView('view-nickname');
+            $('nickname-session-name').textContent = 'Sesión no encontrada. Pide al presentador el enlace correcto.';
+            $('view-nickname').querySelector('button')?.setAttribute('disabled','true');
+            return;
+        }
+        sessionData = data;
+
+        if (sessionData.status === 'ended') { renderEndParticipant(); return; }
+
+        // Mostrar el nombre de la sesión en la pantalla de apodo
+        if (sessionData.name) $('nickname-session-name').textContent = `Únete a: ${sessionData.name}`;
+
+        // Auto-completar apodo si ya se había registrado
+        const savedNick = localStorage.getItem('ipos_nick_' + cloudId);
+        if (savedNick) {
+            $('nickname-input').value = savedNick;
+        }
+
+        showView('view-nickname');
+    };
+
+    async function joinSession() {
+        const nick = $('nickname-input').value.trim();
+        if (!nick) { alert('Por favor ingresa tu nombre o apodo.'); return; }
+        participantNick = nick;
+        localStorage.setItem('ipos_nick_' + cloudId, nick);
+
+        // Registrar participante en Supabase
+        const latest = await fetchData();
+        if (!latest) { alert('Error al conectar con la sesión.'); return; }
+        sessionData = latest;
+
+        if (sessionData.status === 'ended') { renderEndParticipant(); return; }
+
+        sessionData.participants = sessionData.participants || {};
+        sessionData.participants[participantId] = nick;
+        await push();
+
+        subscribeRealtime(false);
+        startPolling(false);
+
+        if (sessionData.status === 'lobby') {
+            // Cuestionario todavía no ha empezado — ir al lobby de espera
+            $('lobby-wait-name').textContent = `Hola, ${nick}! El presentador iniciará el cuestionario en breve.`;
+            showView('view-lobby-participant');
+            updateLobbyPeersList();
+        } else {
+            // El cuestionario ya está en marcha — entrar directamente
+            $('nickname-badge').textContent = '👤 ' + nick;
+            showView('view-participant');
+            renderParticipantQuestion();
+            startParticipantTimer(sessionData.timerSeconds, sessionData.questionChangedAt);
+        }
+    }
+
+    function updateLobbyPeersList() {
+        const names = Object.values(sessionData.participants || {});
+        $('lobby-peers-list').innerHTML = names.length === 0
+            ? '<p class="text-slate-500 italic">Solo tú por ahora…</p>'
+            : names.map(n => `<div class="py-0.5">👤 ${n}</div>`).join('');
+    }
+
+    function handleParticipantUpdate(incoming) {
+        const prevStatus = sessionData.status;
+        const prevIndex  = sessionData.currentIndex;
+        const prevReveal = sessionData.reveal;
+        sessionData = incoming;
+
+        if (sessionData.status === 'ended') { renderEndParticipant(); return; }
+
+        // Transición lobby → activo (cuestionario) o exam-active (examen)
+        if (prevStatus === 'lobby') {
+            if (sessionData.status === 'active') {
+                $('nickname-badge').textContent = '👤 ' + participantNick;
+                showView('view-participant');
+                renderParticipantQuestion();
+                startParticipantTimer(sessionData.timerSeconds, sessionData.questionChangedAt);
+                return;
+            }
+            if (sessionData.status === 'exam-active') {
+                initExamParticipant();
+                return;
+            }
+        }
+
+        // Examen finalizado anticipadamente por el presentador
+        if (prevStatus === 'exam-active' && sessionData.status === 'ended') {
+            autoSubmitExam();
+            return;
+        }
+
+        // Si seguimos en lobby, actualizar la lista de pares
+        if (sessionData.status === 'lobby') {
+            updateLobbyPeersList();
+            return;
+        }
+
+        // Si cambió la pregunta, reiniciar timer (sincronizado con questionChangedAt del servidor)
+        if (incoming.currentIndex !== prevIndex) {
+            lastRenderedIdx = -1;
+            if (timerInt) clearInterval(timerInt);
+            $('pt-timer-wrap').classList.add('hidden');
+            startParticipantTimer(sessionData.timerSeconds, sessionData.questionChangedAt);
+        }
+
+        renderParticipantQuestion();
+
+        // Si el presentador reveló la respuesta, actualizar resultados/feedback
+        const voteKey = `voted_${cloudId}_${sessionData.currentIndex}`;
+        if (localStorage.getItem(voteKey)) {
+            renderVoteResults();
+        }
+    }
+
+    function renderParticipantQuestion() {
+        const q = sessionData.questions[sessionData.currentIndex];
+        if (!q) return;
+
+        $('participant-counter').textContent = `Pregunta ${sessionData.currentIndex + 1} / ${sessionData.questions.length}`;
+        $('mobile-question-text').textContent = q.pregunta;
+
+        const voteKey     = `voted_${cloudId}_${sessionData.currentIndex}`;
+        const votedOption = localStorage.getItem(voteKey);
+        const container   = $('mobile-options-container');
+
+        if (votedOption) {
+            // Mostrar feedback post-voto
+            const isCorrect = sessionData.reveal && votedOption === q.correcta;
+            let feedback = '';
+            if (sessionData.reveal) {
+                feedback = isCorrect
+                    ? '<p class="text-emerald-400 font-bold mt-1">✅ ¡Respuesta correcta!</p>'
+                    : `<p class="text-red-400 font-semibold mt-1">❌ La respuesta correcta era: <strong>${q.correcta}</strong></p>`;
+            } else {
+                feedback = '<p class="text-xs text-slate-400 mt-1">Esperando a que el presentador avance.</p>';
+            }
+
+            container.innerHTML = `
+                <div class="p-5 bg-slate-800 rounded-2xl border border-slate-700 shadow-xl text-center fade-in">
+                    <p class="text-indigo-300 font-bold">¡Votaste por la opción ${votedOption}!</p>
+                    ${feedback}
+                </div>`;
+
+            $('vote-results').classList.remove('hidden');
+            renderVoteResults();
+        } else {
+            // Mostrar botones de respuesta
+            $('vote-results').classList.add('hidden');
+            container.innerHTML = ['A','B','C','D'].map(k => {
+                const text = q['opcion'+k];
+                if (!text) return '';
+                return `
+                <button onclick="submitVote('${k}')"
+                    class="w-full p-4 bg-indigo-600 hover:bg-indigo-500 active:scale-95 rounded-xl font-bold text-white shadow-lg transition text-left flex items-center justify-between fade-in">
+                    <span><strong class="text-indigo-200 mr-2">${k}:</strong>${text}</span>
+                    <i class="fa-solid fa-chevron-right text-xs opacity-60"></i>
+                </button>`;
+            }).join('');
+        }
+
+        lastRenderedIdx = sessionData.currentIndex;
+    }
+
+    function renderVoteResults() {
+        const q = sessionData.questions[sessionData.currentIndex];
+        if (!q) return;
+
+        const total = ['A','B','C','D'].reduce((s,k) => s + (sessionData.votes[sessionData.currentIndex+'_'+k] || 0), 0);
+        $('vote-results-bars').innerHTML = ['A','B','C','D'].map(k => {
+            const text  = q['opcion'+k];
+            if (!text) return '';
+            const count = sessionData.votes[sessionData.currentIndex+'_'+k] || 0;
+            const pct   = total > 0 ? Math.round(count/total*100) : 0;
+            const isOk  = sessionData.reveal && k === q.correcta;
+            return `
+            <div>
+                <div class="flex justify-between text-xs mb-1">
+                    <span class="${isOk ? 'text-emerald-400 font-bold' : 'text-slate-300'} truncate mr-2">
+                        ${k}: ${text.length > 35 ? text.substring(0,35)+'…' : text}
+                    </span>
+                    <span class="text-slate-400 shrink-0">${count} voto${count!==1?'s':''} (${pct}%)</span>
+                </div>
+                <div class="h-2 bg-slate-700 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-700 ${isOk ? 'bg-emerald-400' : 'bg-indigo-500'}"
+                        style="width:${pct}%"></div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    // ── ENVIAR VOTO ───────────────────────────────────────────────────────────
+    async function submitVote(k) {
+        const voteKey = `voted_${cloudId}_${sessionData.currentIndex}`;
+        if (localStorage.getItem(voteKey)) { alert('¡Ya has registrado tu voto en esta pregunta!'); return; }
+
+        // ── Deduplicación server-side ─────────────────────────────────────────
+        // Obtenemos el estado más reciente antes de votar
+        const latest = await fetchData();
+        if (!latest) { alert('Error de conexión. Intenta de nuevo.'); return; }
+        sessionData = latest;
+
+        const qIdx    = String(sessionData.currentIndex);
+        const voters  = sessionData.voters || {};
+        const voterList = voters[qIdx] || [];
+
+        // Verificar si este participantId ya registró voto en el servidor
+        if (voterList.includes(participantId)) {
+            // Ya votó en el servidor pero no en localStorage → sincronizar
+            localStorage.setItem(voteKey, k);
+            renderParticipantQuestion();
+            return;
+        }
+
+        // Registrar voto
+        const vk = sessionData.currentIndex + '_' + k;
+        sessionData.votes[vk]  = (sessionData.votes[vk] || 0) + 1;
+        sessionData.voters[qIdx] = [...voterList, participantId];
+
+        // Guardar qué opción eligió este participante (para calcular calificaciones al final)
+        sessionData.participantVotes = sessionData.participantVotes || {};
+        sessionData.participantVotes[participantId] = sessionData.participantVotes[participantId] || {};
+        sessionData.participantVotes[participantId][qIdx] = k;
+
+        await push();
+        localStorage.setItem(voteKey, k); // Guardar localmente
+
+        renderParticipantQuestion();
+        renderVoteResults();
+    }
     </script>
 </body>
 </html>
