@@ -106,7 +106,7 @@
         <section id="view-setup" class="my-auto max-w-2xl mx-auto w-full space-y-6 py-6 flex-col">
             <div class="text-center space-y-2">
                 <h2 class="text-3xl font-extrabold text-white">Iniciar Cuestionario en Vivo</h2>
-                <p class="text-slate-400 text-sm">Pega las celdas copiadas de Google Sheets: Pregunta · Opción A · B · C · D · Correcta</p>
+                <p class="text-slate-400 text-sm">Pega las celdas copiadas de Google Sheets: Pregunta · Opción A · B · C · D · Correcta · URL Imagen (opcional)</p>
             </div>
 
             <div class="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl space-y-5">
@@ -291,6 +291,11 @@
                                 <i class="fa-solid fa-eye mr-1"></i>Ver Respuesta
                             </button>
                         </div>
+                        <div id="presenter-question-image" class="hidden mt-3">
+                            <img id="presenter-q-img" src="" alt="Imagen de la pregunta"
+                                class="rounded-xl max-h-64 w-full object-contain bg-slate-900/50 border border-slate-700"
+                                onerror="this.parentElement.classList.add('hidden')">
+                        </div>
                     </div>
 
                     <div id="presenter-options-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
@@ -370,6 +375,12 @@
                 Cargando cuestionario…
             </div>
 
+            <div id="mobile-question-image" class="hidden">
+                <img id="participant-q-img" src="" alt="Imagen de la pregunta"
+                    class="rounded-xl max-h-56 w-full object-contain bg-slate-900/50 border border-slate-700"
+                    onerror="this.parentElement.classList.add('hidden')">
+            </div>
+
             <div id="mobile-options-container" class="space-y-3"></div>
 
             <!-- Resultados en tiempo real (post-voto) -->
@@ -431,6 +442,11 @@
             <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl space-y-4">
                 <p id="exam-question-num" class="text-xs text-indigo-400 font-semibold uppercase tracking-wider">Pregunta --</p>
                 <p id="exam-question-text" class="text-lg font-bold text-white leading-snug">Cargando…</p>
+                <div id="exam-question-image" class="hidden">
+                    <img id="exam-q-img" src="" alt="Imagen de la pregunta"
+                        class="rounded-xl max-h-56 w-full object-contain bg-slate-900/50 border border-slate-700"
+                        onerror="this.parentElement.classList.add('hidden')">
+                </div>
                 <div id="exam-options-container" class="space-y-2"></div>
             </div>
 
@@ -592,6 +608,20 @@
     checkAuth();
 
     // ── PARSER GOOGLE SHEETS ──────────────────────────────────────────────────
+    // Convierte URL de compartir de Google Drive a URL de visualización directa.
+    // Soporta también URLs directas (no-Drive) que se usan tal cual.
+    function convertGDriveUrl(url) {
+        if (!url) return '';
+        url = url.trim();
+        // Formato: https://drive.google.com/file/d/FILE_ID/view?...
+        const match = url.match(/\/file\/d\/([\w-]+)/);
+        if (match) return `https://drive.google.com/uc?export=view&id=${match[1]}`;
+        // Formato: https://drive.google.com/open?id=FILE_ID
+        const match2 = url.match(/[?&]id=([\w-]+)/);
+        if (match2) return `https://drive.google.com/uc?export=view&id=${match2[1]}`;
+        return url; // URL externa directa
+    }
+
     function parseSheetText(raw) {
         const lines = raw.split(/\r\n|\n/).filter(l => l.trim());
         const parsed = [];
@@ -608,7 +638,8 @@
                     opcionB: cols[2] || '',
                     opcionC: cols[3] || '',
                     opcionD: cols[4] || '',
-                    correcta: (cols[5] || 'A').toUpperCase().charAt(0)
+                    correcta: (cols[5] || 'A').toUpperCase().charAt(0),
+                    imageUrl: convertGDriveUrl(cols[6] || '')
                 });
             }
         }
@@ -728,6 +759,11 @@
 
         $('presenter-question-text').textContent = q.pregunta;
         $('presenter-counter').textContent = `Pregunta ${sessionData.currentIndex + 1} / ${sessionData.questions.length}`;
+        // Imagen de la pregunta (quiz presentador)
+        const pqImgWrap = $('presenter-question-image');
+        const pqImg = $('presenter-q-img');
+        if (q.imageUrl) { pqImg.src = q.imageUrl; pqImgWrap.classList.remove('hidden'); }
+        else { pqImgWrap.classList.add('hidden'); pqImg.src = ''; }
         updateRevealBtn();
 
         const total = ['A','B','C','D'].reduce((s,k) => s + (sessionData.votes[sessionData.currentIndex+'_'+k] || 0), 0);
@@ -964,6 +1000,11 @@
         $('exam-progress-label').textContent  = `Pregunta ${examPos + 1} / ${totalQ}`;
         $('exam-question-num').textContent    = `Pregunta ${examPos + 1} de ${totalQ}`;
         $('exam-question-text').textContent   = q.pregunta;
+        // Imagen de la pregunta (examen participante)
+        const eqImgWrap = $('exam-question-image');
+        const eqImg = $('exam-q-img');
+        if (q.imageUrl) { eqImg.src = q.imageUrl; eqImgWrap.classList.remove('hidden'); }
+        else { eqImgWrap.classList.add('hidden'); eqImg.src = ''; }
 
         const selected = examAnswers[origIdx];
         $('exam-options-container').innerHTML = ['A','B','C','D'].map(k => {
@@ -1558,6 +1599,11 @@
 
         $('participant-counter').textContent = `Pregunta ${sessionData.currentIndex + 1} / ${sessionData.questions.length}`;
         $('mobile-question-text').textContent = q.pregunta;
+        // Imagen de la pregunta (quiz participante)
+        const mqImgWrap = $('mobile-question-image');
+        const mqImg = $('participant-q-img');
+        if (q.imageUrl) { mqImg.src = q.imageUrl; mqImgWrap.classList.remove('hidden'); }
+        else { mqImgWrap.classList.add('hidden'); mqImg.src = ''; }
 
         const voteKey     = `voted_${cloudId}_${sessionData.currentIndex}`;
         const votedOption = localStorage.getItem(voteKey);
