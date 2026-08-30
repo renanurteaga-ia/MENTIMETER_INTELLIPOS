@@ -169,9 +169,27 @@
                     </div>
                 </div>
 
-                <button id="btn-create" onclick="createCloudSession()"
+                <button id="btn-preview" onclick="previewQuestions()"
                     class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl shadow-lg transition flex items-center justify-center space-x-2">
-                    <span>🚀 Crear Sesión en Vivo</span>
+                    <span>Siguiente: agregar imágenes →</span>
+                </button>
+            </div>
+
+            <!-- Panel de imágenes por pregunta -->
+            <div id="image-upload-panel" class="hidden bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl space-y-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-bold text-white">📸 Imágenes por pregunta</h3>
+                        <p class="text-xs text-slate-400 mt-0.5">Opcional — podés dejar sin imagen las preguntas que no la necesiten</p>
+                    </div>
+                    <button onclick="backToSetup()" class="text-xs text-slate-400 hover:text-slate-200 transition">
+                        ← Volver
+                    </button>
+                </div>
+                <div id="image-upload-list" class="space-y-3 max-h-[420px] overflow-y-auto pr-1"></div>
+                <button id="btn-create" onclick="createCloudSession()"
+                    class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg transition flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-rocket mr-2"></i><span>Crear Sesión en Vivo</span>
                 </button>
             </div>
         </section>
@@ -646,12 +664,71 @@
         return parsed;
     }
 
-    // ── CREAR SESIÓN ──────────────────────────────────────────────────────────
-    async function createCloudSession() {
+    // ── PREPARACIÓN: PREVISUALIZACIÓN Y SUBIDA DE IMÁGENES ───────────────────
+    let parsedQuestions = [];
+
+    function previewQuestions() {
         const raw = $('sheet-text-input').value;
         if (!raw.trim()) { alert('Por favor pega el contenido de tus celdas de Google Sheets.'); return; }
-        const questions = parseSheetText(raw);
-        if (!questions.length) { alert('No se pudieron interpretar las preguntas. Verifica el formato.'); return; }
+        parsedQuestions = parseSheetText(raw);
+        if (!parsedQuestions.length) { alert('No se pudieron interpretar las preguntas. Verifica el formato.'); return; }
+        renderImageUploadPanel();
+        $('image-upload-panel').classList.remove('hidden');
+        $('image-upload-panel').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function backToSetup() {
+        $('image-upload-panel').classList.add('hidden');
+    }
+
+    function renderImageUploadPanel() {
+        $('image-upload-list').innerHTML = parsedQuestions.map((q, i) => `
+            <div class="bg-slate-900 rounded-xl p-3 space-y-2 border border-slate-700/50">
+                <p class="text-sm font-semibold text-white leading-snug">${i + 1}. ${q.pregunta}</p>
+                <div class="flex items-center gap-3 flex-wrap">
+                    ${q.imageUrl ? `
+                        <img src="${q.imageUrl}" alt="" class="w-20 h-14 object-cover rounded-lg border border-slate-600 shrink-0">
+                        <span class="text-xs text-emerald-400 font-semibold">✓ Imagen cargada</span>
+                        <button onclick="removeImage(${i})" class="text-xs text-red-400 hover:text-red-300 transition">✕ Quitar</button>
+                    ` : `<span class="text-xs text-slate-500 italic">Sin imagen</span>`}
+                    <label class="cursor-pointer ml-auto px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs text-slate-300 transition flex items-center gap-1.5 shrink-0">
+                        <i class="fa-solid fa-upload text-[10px]"></i>
+                        <span id="upload-label-${i}">${q.imageUrl ? 'Cambiar' : 'Subir imagen'}</span>
+                        <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden" onchange="handleImageUpload(event, ${i})">
+                    </label>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async function handleImageUpload(event, idx) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const label = $(`upload-label-${idx}`);
+        label.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Subiendo…';
+        try {
+            const ext  = file.name.split('.').pop().toLowerCase();
+            const name = `q_${Date.now()}_${idx}.${ext}`;
+            const { error } = await sb.storage.from('quiz-images').upload(name, file, { upsert: true });
+            if (error) throw error;
+            const { data } = sb.storage.from('quiz-images').getPublicUrl(name);
+            parsedQuestions[idx].imageUrl = data.publicUrl;
+            renderImageUploadPanel();
+        } catch(err) {
+            alert('Error al subir imagen: ' + (err.message || err));
+            renderImageUploadPanel();
+        }
+    }
+
+    function removeImage(idx) {
+        parsedQuestions[idx].imageUrl = '';
+        renderImageUploadPanel();
+    }
+
+    // ── CREAR SESIÓN ──────────────────────────────────────────────────────────
+    async function createCloudSession() {
+        const questions = parsedQuestions;
+        if (!questions.length) { alert('No hay preguntas cargadas.'); return; }
 
         const btn = $('btn-create');
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Guardando…';
