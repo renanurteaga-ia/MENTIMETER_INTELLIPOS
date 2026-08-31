@@ -193,6 +193,10 @@ function showCreateView(quiz = null) {
   editingQuizId = null;
   $('create-title').textContent = 'Nuevo cuestionario';
   $('save-btn-label').textContent = 'Guardar cuestionario';
+  // Limpiar estado del botón de guardado
+  $('save-status').textContent = '';
+  const saveBtn = document.querySelector('#image-panel button[onclick="saveQuiz()"]');
+  if (saveBtn) saveBtn.disabled = false;
 
   if (quiz) {
     editingQuizId = quiz.id;
