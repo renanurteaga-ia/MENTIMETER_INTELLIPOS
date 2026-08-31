@@ -135,44 +135,19 @@
                 </div>
             </div>
 
-            <!-- Botón directo cuando viene de la biblioteca -->
-            <div id="btn-create-from-library" class="hidden bg-slate-800/80 border border-slate-700/60 rounded-2xl p-5 shadow-2xl space-y-4">
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Nombre de la sesión</label>
-                        <input type="text" id="session-name-library" placeholder="Ej: Clase del lunes"
-                            class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Modalidad</label>
-                        <div class="grid grid-cols-2 gap-2">
-                            <label class="flex items-center space-x-2 bg-slate-900 border border-slate-700 rounded-xl p-2.5 cursor-pointer hover:border-indigo-500 transition has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-950/40">
-                                <input type="radio" name="lib-mode" value="quiz" checked class="accent-indigo-500">
-                                <span class="text-sm text-white">🎯 Cuestionario</span>
-                            </label>
-                            <label class="flex items-center space-x-2 bg-slate-900 border border-slate-700 rounded-xl p-2.5 cursor-pointer hover:border-indigo-500 transition has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-950/40">
-                                <input type="radio" name="lib-mode" value="exam" class="accent-indigo-500">
-                                <span class="text-sm text-white">📝 Examen</span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-                <button onclick="createSessionFromLibrary()"
-                    class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg transition flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-rocket"></i> Crear Sesión en Vivo
-                </button>
-            </div>
-
-            <div id="divider-or" class="text-center text-slate-600 text-xs">— o pega un cuestionario nuevo —</div>
-
-            <div id="paste-panel" class="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl space-y-5">
+            <!-- Solo el textarea se oculta cuando se carga de biblioteca -->
+            <div id="paste-panel" class="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-4 shadow-2xl space-y-3">
+                <div id="divider-or" class="text-center text-slate-600 text-xs">— o pega un cuestionario nuevo —</div>
                 <div>
                     <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Contenido de Google Sheets</label>
                     <textarea id="sheet-text-input" rows="8"
                         placeholder="Pega aquí tus datos copiados de Google Sheets..."
                         class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-white font-mono focus:outline-none focus:border-indigo-500 transition resize-none"></textarea>
                 </div>
+            </div>
 
+            <!-- Nombre, modalidad, opciones — siempre visible -->
+            <div class="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl space-y-5">
                 <!-- Nombre y modalidad -->
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
@@ -225,10 +200,18 @@
                     </div>
                 </div>
 
-                <button id="btn-preview" onclick="previewQuestions()"
-                    class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl shadow-lg transition flex items-center justify-center space-x-2">
-                    <span>Siguiente: agregar imágenes →</span>
-                </button>
+                <div id="btn-preview-wrap">
+                    <button id="btn-preview" onclick="previewQuestions()"
+                        class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl shadow-lg transition flex items-center justify-center space-x-2">
+                        <span>Siguiente: agregar imágenes →</span>
+                    </button>
+                </div>
+                <div id="btn-launch-library" class="hidden">
+                    <button onclick="createSessionFromLibrary()"
+                        class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-rocket"></i> Crear Sesión en Vivo
+                    </button>
+                </div>
             </div>
 
             <!-- Panel de imágenes por pregunta -->
@@ -750,12 +733,11 @@
         $('library-loaded-name').textContent = opt.textContent.split('(')[0].trim();
         $('library-loaded-count').textContent = parsedQuestions.length;
         $('library-loaded-msg').classList.remove('hidden');
-        // Ocultar panel de pegado y separador
+        // Ocultar textarea y separador, mostrar botón de crear sesión
         $('paste-panel').classList.add('hidden');
-        $('divider-or').classList.add('hidden');
         $('image-upload-panel').classList.add('hidden');
-        // Mostrar botón directo de crear sesión
-        $('btn-create-from-library').classList.remove('hidden');
+        $('btn-preview-wrap').classList.add('hidden');
+        $('btn-launch-library').classList.remove('hidden');
     }
 
     function clearLibrarySelection() {
@@ -763,8 +745,8 @@
         $('library-select').value = '';
         $('library-loaded-msg').classList.add('hidden');
         $('paste-panel').classList.remove('hidden');
-        $('divider-or').classList.remove('hidden');
-        $('btn-create-from-library').classList.add('hidden');
+        $('btn-preview-wrap').classList.remove('hidden');
+        $('btn-launch-library').classList.add('hidden');
     }
 
     function previewQuestions() {
@@ -828,8 +810,8 @@
     // ── CREAR SESIÓN ──────────────────────────────────────────────────────────
     async function createSessionFromLibrary() {
         if (!parsedQuestions.length) { alert('No hay preguntas cargadas.'); return; }
-        const mode = document.querySelector('input[name="lib-mode"]:checked')?.value || 'quiz';
-        const name = $('session-name-library').value.trim() || (mode === 'exam' ? 'Examen en Línea' : 'Cuestionario en Vivo');
+        const mode = document.querySelector('input[name="session-mode"]:checked')?.value || 'quiz';
+        const name = $('session-name-input').value.trim() || (mode === 'exam' ? 'Examen en Línea' : 'Cuestionario en Vivo');
 
         cloudId = genId('s_');
         sessionData = {
