@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>IntelliPOS — Biblioteca de Cuestionarios</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/js/all.min.js" defer></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/supabase/2.39.3/umd/supabase.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   body { background: #0f172a; font-family: system-ui, sans-serif; }
   .glass { background: rgba(30,41,59,0.85); backdrop-filter: blur(12px); }
@@ -227,6 +227,7 @@ async function loadLibrary() {
   }
 
   if (!data || data.length === 0) {
+    $('lib-loading').classList.add('hidden');
     $('lib-empty').classList.remove('hidden');
     return;
   }
