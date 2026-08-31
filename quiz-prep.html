@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IntelliPOS — Biblioteca de Cuestionarios</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/js/all.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/supabase/2.39.3/umd/supabase.min.js"></script>
+<style>
+  body { background: #0f172a; font-family: system-ui, sans-serif; }
+  .glass { background: rgba(30,41,59,0.85); backdrop-filter: blur(12px); }
+  .img-thumb { width: 80px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid #334155; }
+  .fade-in { animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .quiz-card:hover { border-color: #6366f1; }
+  textarea { resize: vertical; }
+</style>
+</head>
+<body class="min-h-screen text-slate-100">
+
+<!-- HEADER -->
+<header class="glass border-b border-slate-700/60 px-6 py-4 flex items-center gap-4 sticky top-0 z-30">
+  <div class="flex items-center gap-3">
+    <div class="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-lg font-bold">I</div>
+    <div>
+      <div class="font-bold text-white leading-tight">IntelliPOS</div>
+      <div class="text-xs text-indigo-400">Biblioteca de Cuestionarios</div>
+    </div>
+  </div>
+  <div class="ml-auto">
+    <button onclick="showCreateView()" class="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-sm font-semibold transition-colors">
+      <i class="fa-solid fa-plus"></i> Nuevo cuestionario
+    </button>
+  </div>
+</header>
+
+<!-- MAIN -->
+<main class="max-w-3xl mx-auto px-4 py-8 space-y-6">
+
+  <!-- LIBRARY VIEW -->
+  <div id="view-library">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-lg font-bold text-white">📚 Mis cuestionarios</h2>
+      <button onclick="loadLibrary()" class="text-slate-400 hover:text-white text-sm flex items-center gap-1 transition-colors">
+        <i class="fa-solid fa-rotate-right"></i> Actualizar
+      </button>
+    </div>
+
+    <!-- Loading -->
+    <div id="lib-loading" class="text-center py-16 text-slate-500">
+      <i class="fa-solid fa-spinner fa-spin text-2xl mb-3"></i>
+      <p>Cargando cuestionarios…</p>
+    </div>
+
+    <!-- Empty -->
+    <div id="lib-empty" class="hidden text-center py-16 text-slate-500 glass rounded-2xl border border-slate-700/50">
+      <i class="fa-solid fa-book-open text-4xl mb-4 text-slate-600"></i>
+      <p class="font-semibold text-slate-400">Aún no tienes cuestionarios guardados</p>
+      <p class="text-sm mt-1">Crea tu primero con el botón "Nuevo cuestionario"</p>
+    </div>
+
+    <!-- List -->
+    <div id="lib-list" class="hidden space-y-3"></div>
+  </div>
+
+  <!-- CREATE / EDIT VIEW -->
+  <div id="view-create" class="hidden fade-in space-y-5">
+
+    <!-- Back -->
+    <button onclick="showLibraryView()" class="flex items-center gap-2 text-slate-400 hover:text-white text-sm transition-colors">
+      <i class="fa-solid fa-arrow-left"></i> Volver a la biblioteca
+    </button>
+
+    <h2 id="create-title" class="text-xl font-bold text-white">Nuevo cuestionario</h2>
+
+    <!-- Name -->
+    <div class="glass rounded-2xl border border-slate-700/50 p-5 space-y-3">
+      <label class="block text-sm font-semibold text-slate-300">Nombre del cuestionario</label>
+      <input id="quiz-name" type="text" placeholder="Ej: Pintores famosos — Bloque 1"
+        class="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm">
+    </div>
+
+    <!-- Paste TSV -->
+    <div class="glass rounded-2xl border border-slate-700/50 p-5 space-y-3">
+      <label class="block text-sm font-semibold text-slate-300">
+        Preguntas <span class="text-slate-500 font-normal">(pega desde Google Sheets)</span>
+      </label>
+      <p class="text-xs text-slate-500">Columnas: Pregunta · Opción A · B · C · D · Correcta · (URL imagen opcional)</p>
+      <textarea id="sheet-input" rows="8"
+        placeholder="Pega aquí el contenido copiado de Google Sheets…"
+        class="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm font-mono"></textarea>
+      <button onclick="parseAndPreview()"
+        class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2">
+        <i class="fa-solid fa-eye"></i> Previsualizar preguntas →
+      </button>
+    </div>
+
+    <!-- Image upload panel -->
+    <div id="image-panel" class="hidden glass rounded-2xl border border-slate-700/50 p-5 space-y-4 fade-in">
+      <div class="flex items-center justify-between">
+        <h3 class="font-semibold text-white text-sm flex items-center gap-2">
+          <i class="fa-solid fa-images text-indigo-400"></i>
+          Imágenes por pregunta
+        </h3>
+        <span id="img-count" class="text-xs text-slate-500"></span>
+      </div>
+      <div id="image-list" class="space-y-3 max-h-[500px] overflow-y-auto pr-1"></div>
+
+      <!-- Save button -->
+      <div class="pt-2 border-t border-slate-700/50 space-y-3">
+        <div class="flex items-center gap-3">
+          <div id="save-status" class="text-xs text-slate-500 flex-1"></div>
+          <button onclick="saveQuiz()"
+            class="flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-sm font-bold transition-colors">
+            <i class="fa-solid fa-floppy-disk"></i>
+            <span id="save-btn-label">Guardar cuestionario</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<!-- DELETE CONFIRM MODAL -->
+<div id="modal-delete" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+  <div class="glass rounded-2xl border border-red-800/50 p-6 max-w-sm w-full space-y-4 fade-in">
+    <h3 class="text-lg font-bold text-white flex items-center gap-2">
+      <i class="fa-solid fa-triangle-exclamation text-red-400"></i> ¿Eliminar cuestionario?
+    </h3>
+    <p class="text-sm text-slate-400">Esta acción no se puede deshacer. Las imágenes en Supabase Storage se mantendrán.</p>
+    <p id="modal-quiz-name" class="text-white font-semibold bg-slate-900 rounded-lg px-3 py-2 text-sm"></p>
+    <div class="flex gap-3 pt-1">
+      <button onclick="closeDeleteModal()" class="flex-1 py-2 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition-colors">Cancelar</button>
+      <button onclick="confirmDelete()" class="flex-1 py-2 bg-red-600 hover:bg-red-500 rounded-xl text-sm font-bold transition-colors">Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Supabase ─────────────────────────────────────────────────────────────────
+const SUPA_URL = 'https://syshosukdpsiudelwuqz.supabase.co';
+const SUPA_KEY = 'sb_publishable_vQPvDpmWTZCH0O6xfQcBlA_ig91xeUf';
+const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let parsedQuestions = [];
+let editingQuizId = null;
+let deleteTargetId = null;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+
+function parseSheetText(raw) {
+  const lines = raw.trim().split('\n').filter(l => l.trim());
+  const result = [];
+  for (const line of lines) {
+    const cols = line.split('\t');
+    if (cols.length < 6) continue;
+    const first = cols[0].trim().toLowerCase();
+    if (first === 'pregunta' || first === 'question') continue;
+    result.push({
+      pregunta: cols[0].trim(),
+      opcionA: (cols[1]||'').trim(),
+      opcionB: (cols[2]||'').trim(),
+      opcionC: (cols[3]||'').trim(),
+      opcionD: (cols[4]||'').trim(),
+      correcta: ((cols[5]||'A').trim().toUpperCase().charAt(0)),
+      imageUrl: (cols[6]||'').trim()
+    });
+  }
+  return result;
+}
+
+// ── Views ─────────────────────────────────────────────────────────────────────
+function showLibraryView() {
+  $('view-library').classList.remove('hidden');
+  $('view-create').classList.add('hidden');
+  parsedQuestions = [];
+  editingQuizId = null;
+  loadLibrary();
+}
+
+function showCreateView(quiz = null) {
+  $('view-library').classList.add('hidden');
+  $('view-create').classList.remove('hidden');
+  $('image-panel').classList.add('hidden');
+  $('sheet-input').value = '';
+  $('quiz-name').value = '';
+  parsedQuestions = [];
+  editingQuizId = null;
+  $('create-title').textContent = 'Nuevo cuestionario';
+  $('save-btn-label').textContent = 'Guardar cuestionario';
+
+  if (quiz) {
+    editingQuizId = quiz.id;
+    $('quiz-name').value = quiz.nombre;
+    $('create-title').textContent = 'Editar cuestionario';
+    $('save-btn-label').textContent = 'Guardar cambios';
+    parsedQuestions = quiz.preguntas;
+    renderImageList();
+    $('image-panel').classList.remove('hidden');
+    // populate textarea for reference
+    const tsv = parsedQuestions.map(q =>
+      [q.pregunta, q.opcionA, q.opcionB, q.opcionC, q.opcionD, q.correcta, q.imageUrl||''].join('\t')
+    ).join('\n');
+    $('sheet-input').value = tsv;
+  }
+}
+
+// ── Library ───────────────────────────────────────────────────────────────────
+async function loadLibrary() {
+  $('lib-loading').classList.remove('hidden');
+  $('lib-empty').classList.add('hidden');
+  $('lib-list').classList.add('hidden');
+
+  const { data, error } = await sb.from('quizzes').select('id, nombre, creado_en, preguntas').order('creado_en', { ascending: false });
+
+  $('lib-loading').classList.add('hidden');
+
+  if (error) {
+    $('lib-empty').classList.remove('hidden');
+    $('lib-empty').querySelector('p').textContent = 'Error al cargar: ' + error.message;
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    $('lib-empty').classList.remove('hidden');
+    return;
+  }
+
+  $('lib-list').classList.remove('hidden');
+  $('lib-list').innerHTML = data.map(q => {
+    const nPreguntas = Array.isArray(q.preguntas) ? q.preguntas.length : 0;
+    const nImgs = Array.isArray(q.preguntas) ? q.preguntas.filter(p => p.imageUrl).length : 0;
+    const fecha = new Date(q.creado_en).toLocaleDateString('es', { day:'2-digit', month:'short', year:'numeric' });
+    const firstImg = Array.isArray(q.preguntas) ? q.preguntas.find(p => p.imageUrl) : null;
+
+    return `
+    <div class="quiz-card glass rounded-2xl border border-slate-700/50 p-4 flex items-center gap-4 transition-colors fade-in">
+      ${firstImg
+        ? `<img src="${firstImg.imageUrl}" class="img-thumb flex-shrink-0" onerror="this.style.display='none'">`
+        : `<div class="flex-shrink-0 w-20 h-14 rounded-lg bg-slate-800 flex items-center justify-center text-slate-600"><i class="fa-solid fa-image text-xl"></i></div>`
+      }
+      <div class="flex-1 min-w-0">
+        <p class="font-bold text-white truncate">${q.nombre}</p>
+        <p class="text-xs text-slate-500 mt-0.5">
+          ${nPreguntas} pregunta${nPreguntas !== 1 ? 's' : ''}
+          ${nImgs > 0 ? `· ${nImgs} con imagen` : ''}
+          · ${fecha}
+        </p>
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <button onclick='editQuiz(${JSON.stringify(q)})' title="Editar"
+          class="w-9 h-9 rounded-xl bg-slate-700 hover:bg-indigo-600 flex items-center justify-center transition-colors text-sm">
+          <i class="fa-solid fa-pen"></i>
+        </button>
+        <button onclick="promptDelete('${q.id}','${q.nombre.replace(/'/g,"\\'")}'')" title="Eliminar"
+          class="w-9 h-9 rounded-xl bg-slate-700 hover:bg-red-600 flex items-center justify-center transition-colors text-sm">
+          <i class="fa-solid fa-trash"></i>
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Parse & Preview ───────────────────────────────────────────────────────────
+function parseAndPreview() {
+  const raw = $('sheet-input').value;
+  if (!raw.trim()) { alert('Pega primero el contenido de Google Sheets.'); return; }
+  const qs = parseSheetText(raw);
+  if (!qs.length) { alert('No se encontraron preguntas válidas. Verifica el formato (mínimo 6 columnas separadas por tabulación).'); return; }
+  parsedQuestions = qs;
+  renderImageList();
+  $('image-panel').classList.remove('hidden');
+  $('image-panel').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ── Image List ────────────────────────────────────────────────────────────────
+function renderImageList() {
+  const withImg = parsedQuestions.filter(q => q.imageUrl).length;
+  $('img-count').textContent = `${parsedQuestions.length} preguntas · ${withImg} con imagen`;
+
+  $('image-list').innerHTML = parsedQuestions.map((q, i) => `
+    <div class="bg-slate-900 rounded-xl p-3 space-y-2 border border-slate-700/40">
+      <p class="text-sm font-semibold text-white leading-snug">${i + 1}. ${q.pregunta}</p>
+      <div class="flex items-center gap-3 flex-wrap">
+        ${q.imageUrl
+          ? `<img src="${q.imageUrl}" class="img-thumb" onerror="this.parentElement.querySelector('.img-ok').classList.add('hidden');this.style.display='none'">
+             <span class="img-ok text-xs text-emerald-400 flex items-center gap-1"><i class="fa-solid fa-check-circle"></i> Imagen cargada</span>
+             <button onclick="removeImage(${i})" class="text-xs text-red-400 hover:text-red-300 transition-colors flex items-center gap-1">
+               <i class="fa-solid fa-xmark"></i> Quitar
+             </button>`
+          : `<span class="text-xs text-slate-500 italic">Sin imagen</span>`
+        }
+        <label class="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-semibold transition-colors">
+          <i class="fa-solid fa-upload"></i>
+          <span id="uplabel-${i}">${q.imageUrl ? 'Cambiar' : 'Subir imagen'}</span>
+          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden" onchange="handleUpload(event,${i})">
+        </label>
+      </div>
+    </div>
+  `).join('');
+}
+
+function removeImage(idx) {
+  parsedQuestions[idx].imageUrl = '';
+  renderImageList();
+}
+
+async function handleUpload(event, idx) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const label = $(`uplabel-${idx}`);
+  label.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Subiendo…';
+
+  try {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const name = `q_${Date.now()}_${idx}.${ext}`;
+    const { error } = await sb.storage.from('quiz-images').upload(name, file, { upsert: true });
+    if (error) throw error;
+    const { data } = sb.storage.from('quiz-images').getPublicUrl(name);
+    parsedQuestions[idx].imageUrl = data.publicUrl;
+    renderImageList();
+  } catch(err) {
+    alert('Error al subir imagen: ' + (err.message || err));
+    renderImageList();
+  }
+}
+
+// ── Save Quiz ─────────────────────────────────────────────────────────────────
+async function saveQuiz() {
+  const nombre = $('quiz-name').value.trim();
+  if (!nombre) { alert('Escribe un nombre para el cuestionario.'); $('quiz-name').focus(); return; }
+  if (!parsedQuestions.length) { alert('No hay preguntas cargadas.'); return; }
+
+  const btn = document.querySelector('#image-panel button[onclick="saveQuiz()"]');
+  const origLabel = $('save-btn-label').textContent;
+  $('save-btn-label').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Guardando…';
+  btn.disabled = true;
+  $('save-status').textContent = '';
+
+  try {
+    if (editingQuizId) {
+      const { error } = await sb.from('quizzes').update({ nombre, preguntas: parsedQuestions }).eq('id', editingQuizId);
+      if (error) throw error;
+    } else {
+      const { error } = await sb.from('quizzes').insert({ nombre, preguntas: parsedQuestions });
+      if (error) throw error;
+    }
+    $('save-status').innerHTML = '<i class="fa-solid fa-check-circle text-emerald-400"></i> <span class="text-emerald-400">¡Guardado correctamente!</span>';
+    setTimeout(() => showLibraryView(), 1200);
+  } catch(err) {
+    $('save-status').innerHTML = `<span class="text-red-400">Error: ${err.message || err}</span>`;
+    $('save-btn-label').textContent = origLabel;
+    btn.disabled = false;
+  }
+}
+
+// ── Edit ──────────────────────────────────────────────────────────────────────
+function editQuiz(quiz) {
+  showCreateView(quiz);
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+function promptDelete(id, nombre) {
+  deleteTargetId = id;
+  $('modal-quiz-name').textContent = nombre;
+  $('modal-delete').classList.remove('hidden');
+}
+
+function closeDeleteModal() {
+  $('modal-delete').classList.add('hidden');
+  deleteTargetId = null;
+}
+
+async function confirmDelete() {
+  if (!deleteTargetId) return;
+  const { error } = await sb.from('quizzes').delete().eq('id', deleteTargetId);
+  closeDeleteModal();
+  if (error) { alert('Error al eliminar: ' + error.message); return; }
+  loadLibrary();
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadLibrary();
+</script>
+</body>
+</html>
