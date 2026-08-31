@@ -129,14 +129,43 @@
                         <i class="fa-solid fa-check"></i> Usar
                     </button>
                 </div>
-                <div id="library-loaded-msg" class="hidden text-xs text-emerald-400 flex items-center gap-1">
+                <div id="library-loaded-msg" class="hidden text-xs text-emerald-400 flex items-center gap-2">
                     <i class="fa-solid fa-circle-check"></i> <span id="library-loaded-name"></span> — <span id="library-loaded-count"></span> preguntas cargadas
+                    <button onclick="clearLibrarySelection()" class="text-slate-500 hover:text-slate-300 ml-2">✕ cambiar</button>
                 </div>
             </div>
 
-            <div class="text-center text-slate-600 text-xs">— o pega un cuestionario nuevo —</div>
+            <!-- Botón directo cuando viene de la biblioteca -->
+            <div id="btn-create-from-library" class="hidden bg-slate-800/80 border border-slate-700/60 rounded-2xl p-5 shadow-2xl space-y-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Nombre de la sesión</label>
+                        <input type="text" id="session-name-library" placeholder="Ej: Clase del lunes"
+                            class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Modalidad</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <label class="flex items-center space-x-2 bg-slate-900 border border-slate-700 rounded-xl p-2.5 cursor-pointer hover:border-indigo-500 transition has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-950/40">
+                                <input type="radio" name="lib-mode" value="quiz" checked class="accent-indigo-500">
+                                <span class="text-sm text-white">🎯 Cuestionario</span>
+                            </label>
+                            <label class="flex items-center space-x-2 bg-slate-900 border border-slate-700 rounded-xl p-2.5 cursor-pointer hover:border-indigo-500 transition has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-950/40">
+                                <input type="radio" name="lib-mode" value="exam" class="accent-indigo-500">
+                                <span class="text-sm text-white">📝 Examen</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <button onclick="createSessionFromLibrary()"
+                    class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-rocket"></i> Crear Sesión en Vivo
+                </button>
+            </div>
 
-            <div class="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl space-y-5">
+            <div id="divider-or" class="text-center text-slate-600 text-xs">— o pega un cuestionario nuevo —</div>
+
+            <div id="paste-panel" class="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl space-y-5">
                 <div>
                     <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Contenido de Google Sheets</label>
                     <textarea id="sheet-text-input" rows="8"
@@ -721,9 +750,21 @@
         $('library-loaded-name').textContent = opt.textContent.split('(')[0].trim();
         $('library-loaded-count').textContent = parsedQuestions.length;
         $('library-loaded-msg').classList.remove('hidden');
-        $('sheet-text-input').value = '';
-        // Ir directo a crear sesión sin panel de imágenes
+        // Ocultar panel de pegado y separador
+        $('paste-panel').classList.add('hidden');
+        $('divider-or').classList.add('hidden');
         $('image-upload-panel').classList.add('hidden');
+        // Mostrar botón directo de crear sesión
+        $('btn-create-from-library').classList.remove('hidden');
+    }
+
+    function clearLibrarySelection() {
+        parsedQuestions = [];
+        $('library-select').value = '';
+        $('library-loaded-msg').classList.add('hidden');
+        $('paste-panel').classList.remove('hidden');
+        $('divider-or').classList.remove('hidden');
+        $('btn-create-from-library').classList.add('hidden');
     }
 
     function previewQuestions() {
@@ -785,6 +826,29 @@
     }
 
     // ── CREAR SESIÓN ──────────────────────────────────────────────────────────
+    async function createSessionFromLibrary() {
+        if (!parsedQuestions.length) { alert('No hay preguntas cargadas.'); return; }
+        const mode = document.querySelector('input[name="lib-mode"]:checked')?.value || 'quiz';
+        const name = $('session-name-library').value.trim() || (mode === 'exam' ? 'Examen en Línea' : 'Cuestionario en Vivo');
+
+        cloudId = genId('s_');
+        sessionData = {
+            questions: parsedQuestions, currentIndex:0, votes:{}, voters:{}, participants:{},
+            participantVotes:{}, examSubmissions:{}, reveal:false, status:'lobby',
+            mode, timerSeconds: 0, examMinutes: 30, randomOrder: false, name,
+            questionChangedAt:0, examStartedAt:0
+        };
+        try {
+            const { error } = await sb.from('quiz_session').insert([{ id: cloudId, data: sessionData }]);
+            if (error) throw error;
+            isPresenter = true;
+            initPresenterLobby();
+        } catch(err) {
+            console.error(err);
+            alert('Error al crear la sesión: ' + (err.message || err));
+        }
+    }
+
     async function createCloudSession() {
         const questions = parsedQuestions;
         if (!questions.length) { alert('No hay preguntas cargadas.'); return; }
