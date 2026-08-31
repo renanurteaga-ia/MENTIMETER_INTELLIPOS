@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IntelliPOS — Listas de Participantes</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  body { background: #0f172a; font-family: system-ui, sans-serif; }
+  .glass { background: rgba(30,41,59,0.85); backdrop-filter: blur(12px); }
+  .fade-in { animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .list-card:hover { border-color: #10b981; }
+  textarea { resize: vertical; }
+  .id-badge { font-family: monospace; background: #1e293b; border: 1px solid #334155; }
+  tr:nth-child(even) td { background: rgba(15,23,42,0.4); }
+</style>
+</head>
+<body class="min-h-screen text-slate-100">
+
+<!-- HEADER -->
+<header class="glass border-b border-slate-700/60 px-6 py-4 flex items-center gap-4 sticky top-0 z-30">
+  <div class="flex items-center gap-3">
+    <div class="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center text-lg font-bold">I</div>
+    <div>
+      <div class="font-bold text-white leading-tight">IntelliPOS</div>
+      <div class="text-xs text-emerald-400">Listas de Participantes</div>
+    </div>
+  </div>
+  <div class="ml-auto flex items-center gap-3">
+    <a href="/quiz-prep.html" class="text-slate-400 hover:text-white text-sm flex items-center gap-1 transition-colors">
+      <i class="fa-solid fa-book"></i> Cuestionarios
+    </a>
+    <button onclick="showCreateView()" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-sm font-semibold transition-colors">
+      <i class="fa-solid fa-plus"></i> Nueva lista
+    </button>
+  </div>
+</header>
+
+<!-- MAIN -->
+<main class="max-w-4xl mx-auto px-4 py-8 space-y-6">
+
+  <!-- ══════════════════════════════════════════════ -->
+  <!-- LIBRARY VIEW                                   -->
+  <!-- ══════════════════════════════════════════════ -->
+  <div id="view-library">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-lg font-bold text-white">👥 Mis listas de participantes</h2>
+      <button onclick="loadLibrary()" class="text-slate-400 hover:text-white text-sm flex items-center gap-1 transition-colors">
+        <i class="fa-solid fa-rotate-right"></i> Actualizar
+      </button>
+    </div>
+
+    <!-- Loading -->
+    <div id="lib-loading" class="text-center py-16 text-slate-500">
+      <i class="fa-solid fa-spinner fa-spin text-2xl mb-3"></i>
+      <p>Cargando listas…</p>
+    </div>
+
+    <!-- Empty -->
+    <div id="lib-empty" class="hidden text-center py-16 text-slate-500 glass rounded-2xl border border-slate-700/50">
+      <i class="fa-solid fa-users text-4xl mb-4 text-slate-600"></i>
+      <p class="font-semibold text-slate-400">Aún no tienes listas guardadas</p>
+      <p class="text-sm mt-1">Crea tu primera lista con el botón "Nueva lista"</p>
+    </div>
+
+    <!-- List -->
+    <div id="lib-list" class="hidden space-y-3"></div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <!-- CREATE / EDIT VIEW                             -->
+  <!-- ══════════════════════════════════════════════ -->
+  <div id="view-create" class="hidden fade-in space-y-5">
+
+    <!-- Back -->
+    <button onclick="showLibraryView()" class="flex items-center gap-2 text-slate-400 hover:text-white text-sm transition-colors">
+      <i class="fa-solid fa-arrow-left"></i> Volver a la biblioteca
+    </button>
+
+    <h2 id="create-title" class="text-xl font-bold text-white">Nueva lista de participantes</h2>
+
+    <!-- Nombre -->
+    <div class="glass rounded-2xl border border-slate-700/50 p-5 space-y-3">
+      <label class="block text-sm font-semibold text-slate-300">Nombre de la lista</label>
+      <input id="list-name" type="text" placeholder="Ej: Contabilidad I · 2026-1 · Sección A"
+        class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors text-sm">
+      <p class="text-xs text-slate-500">Incluye el nombre del curso, ciclo académico y sección/turno si aplica.</p>
+    </div>
+
+    <!-- Pegar datos -->
+    <div class="glass rounded-2xl border border-slate-700/50 p-5 space-y-4">
+      <div>
+        <label class="block text-sm font-semibold text-slate-300 mb-1">Lista de alumnos</label>
+        <p class="text-xs text-slate-500 mb-3">
+          Pega desde Excel o Google Sheets. Columnas requeridas en orden:
+          <span class="text-emerald-400 font-mono">Código · Apellido Paterno · Apellido Materno · Nombres</span>.
+          La fila de encabezado se ignora automáticamente.
+        </p>
+
+        <!-- Formato ejemplo -->
+        <div class="bg-slate-900 rounded-xl border border-slate-700 p-3 mb-3 text-xs font-mono text-slate-400 overflow-x-auto">
+          <div class="text-slate-600 mb-1">Ejemplo:</div>
+          <div>A00123&nbsp;&nbsp;&nbsp;Urteaga&nbsp;&nbsp;&nbsp;&nbsp;Mendoza&nbsp;&nbsp;&nbsp;Renan</div>
+          <div>A00456&nbsp;&nbsp;&nbsp;García&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;López&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Ana María</div>
+          <div>A00789&nbsp;&nbsp;&nbsp;Torres&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Ríos&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Carlos Alberto</div>
+        </div>
+
+        <textarea id="list-input" rows="10"
+          placeholder="Pega aquí la lista desde tu planilla..."
+          class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition-colors text-sm font-mono"></textarea>
+      </div>
+
+      <button onclick="previewList()"
+        class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2">
+        <i class="fa-solid fa-eye"></i> Previsualizar lista
+      </button>
+    </div>
+
+    <!-- Preview -->
+    <div id="preview-panel" class="hidden glass rounded-2xl border border-emerald-700/50 p-5 space-y-4 fade-in">
+      <div class="flex items-center justify-between">
+        <h3 class="font-bold text-emerald-400 flex items-center gap-2">
+          <i class="fa-solid fa-check-circle"></i>
+          <span id="preview-count">0 participantes reconocidos</span>
+        </h3>
+        <span class="text-xs text-slate-500">Identificador generado automáticamente</span>
+      </div>
+
+      <!-- Warnings -->
+      <div id="preview-warnings" class="hidden bg-yellow-900/30 border border-yellow-700/50 rounded-xl p-3 text-xs text-yellow-300 space-y-1"></div>
+
+      <!-- Table -->
+      <div class="overflow-x-auto rounded-xl border border-slate-700">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-slate-800 text-slate-400 text-xs uppercase">
+              <th class="px-3 py-2 text-left">Código</th>
+              <th class="px-3 py-2 text-left">Apellido Paterno</th>
+              <th class="px-3 py-2 text-left">Apellido Materno</th>
+              <th class="px-3 py-2 text-left">Nombres</th>
+              <th class="px-3 py-2 text-left text-emerald-400">Identificador</th>
+            </tr>
+          </thead>
+          <tbody id="preview-tbody" class="divide-y divide-slate-700/50 text-slate-300"></tbody>
+        </table>
+      </div>
+
+      <!-- Save -->
+      <div class="flex items-center gap-4 pt-2">
+        <button id="save-btn" onclick="saveList()"
+          class="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2">
+          <i class="fa-solid fa-floppy-disk"></i> Guardar lista
+        </button>
+        <span id="save-status" class="text-sm text-slate-400"></span>
+      </div>
+    </div>
+
+  </div><!-- /view-create -->
+
+</main>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- SCRIPT                                                      -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<script>
+const SUPABASE_URL = 'https://syshosukdpsiudelwuqz.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_vQPvDpmWTZCH0O6xfQcBlA_ig91xeUf';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let editingId = null;   // uuid of list being edited, null = new
+let parsedList = [];    // current parsed participants
+
+// ── Helpers ───────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const show = id => $(id).classList.remove('hidden');
+const hide = id => $(id).classList.add('hidden');
+
+function initial(str) {
+  if (!str) return '?';
+  return str.trim().charAt(0).toUpperCase();
+}
+
+function buildIdentifier(apPaterno, apMaterno, nombres) {
+  return `${initial(nombres)}.${apPaterno.trim()}.${initial(apMaterno)}`;
+}
+
+// ── Views ─────────────────────────────────────────────────────
+function showLibraryView() {
+  show('view-library');
+  hide('view-create');
+  loadLibrary();
+}
+
+function showCreateView(listData = null) {
+  hide('view-library');
+  show('view-create');
+  hide('preview-panel');
+
+  // reset
+  $('list-name').value = '';
+  $('list-input').value = '';
+  $('save-status').textContent = '';
+  $('save-btn').disabled = false;
+  $('preview-tbody').innerHTML = '';
+  parsedList = [];
+  editingId = null;
+
+  if (listData) {
+    // editing existing list
+    editingId = listData.id;
+    $('create-title').textContent = 'Editar lista';
+    $('list-name').value = listData.nombre;
+    // reconstruct TSV from saved data
+    const tsv = listData.lista.map(p =>
+      `${p.codigo}\t${p.ap_paterno}\t${p.ap_materno}\t${p.nombres}`
+    ).join('\n');
+    $('list-input').value = tsv;
+    previewList();
+  } else {
+    $('create-title').textContent = 'Nueva lista de participantes';
+  }
+}
+
+// ── Library ───────────────────────────────────────────────────
+async function loadLibrary() {
+  show('lib-loading');
+  hide('lib-empty');
+  hide('lib-list');
+
+  const { data, error } = await sb
+    .from('participant_lists')
+    .select('id, nombre, lista, creado_en')
+    .order('creado_en', { ascending: false });
+
+  hide('lib-loading');
+
+  if (error) {
+    $('lib-loading').innerHTML = `<p class="text-red-400">Error al cargar: ${error.message}</p>`;
+    show('lib-loading');
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    show('lib-empty');
+    return;
+  }
+
+  const container = $('lib-list');
+  container.innerHTML = '';
+  data.forEach(lst => {
+    const count = Array.isArray(lst.lista) ? lst.lista.length : 0;
+    const fecha = new Date(lst.creado_en).toLocaleDateString('es', { day:'2-digit', month:'short', year:'numeric' });
+    const card = document.createElement('div');
+    card.className = 'list-card glass rounded-2xl border border-slate-700/50 p-5 flex items-center gap-4 transition-colors cursor-default';
+    card.innerHTML = `
+      <div class="w-11 h-11 rounded-xl bg-emerald-900/60 flex items-center justify-center text-emerald-400 text-xl flex-shrink-0">
+        <i class="fa-solid fa-users"></i>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="font-semibold text-white truncate">${lst.nombre}</div>
+        <div class="text-xs text-slate-500 mt-0.5">${count} participante${count !== 1 ? 's' : ''} · Creada ${fecha}</div>
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <button onclick='editList(${JSON.stringify(lst)})'
+          class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1">
+          <i class="fa-solid fa-pen"></i> Editar
+        </button>
+        <button onclick="deleteList('${lst.id}', '${lst.nombre.replace(/'/g,"\\'")}', this)"
+          class="px-3 py-1.5 bg-red-900/40 hover:bg-red-700/60 rounded-lg text-xs font-semibold text-red-400 hover:text-red-200 transition-colors flex items-center gap-1">
+          <i class="fa-solid fa-trash"></i>
+        </button>
+      </div>`;
+    container.appendChild(card);
+  });
+  show('lib-list');
+}
+
+function editList(listData) {
+  showCreateView(listData);
+}
+
+async function deleteList(id, nombre, btn) {
+  if (!confirm(`¿Eliminar la lista "${nombre}"? Esta acción no se puede deshacer.`)) return;
+  btn.disabled = true;
+  const { error } = await sb.from('participant_lists').delete().eq('id', id);
+  if (error) { alert('Error al eliminar: ' + error.message); btn.disabled = false; return; }
+  loadLibrary();
+}
+
+// ── Parse ─────────────────────────────────────────────────────
+function parseTSV(raw) {
+  const lines = raw.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const participants = [];
+  const warnings = [];
+  const seenIds = {};
+
+  lines.forEach((line, idx) => {
+    // split by tab, or multiple spaces/semicolons as fallback
+    const cols = line.split(/\t|;/).map(c => c.trim());
+
+    if (cols.length < 4) {
+      // Maybe comma-separated?
+      const commaCols = line.split(',').map(c => c.trim());
+      if (commaCols.length >= 4) cols.splice(0, cols.length, ...commaCols);
+    }
+
+    if (cols.length < 4) {
+      warnings.push(`Fila ${idx + 1}: se esperaban 4 columnas, se encontraron ${cols.length} — omitida.`);
+      return;
+    }
+
+    const [codigo, ap_paterno, ap_materno, ...nombreParts] = cols;
+    const nombres = nombreParts.join(' ').trim() || cols[3];
+
+    // Skip header row
+    if (/^c[oó]digo$/i.test(codigo) || /^student$/i.test(codigo) || /^id$/i.test(codigo)) return;
+
+    if (!ap_paterno) { warnings.push(`Fila ${idx + 1}: apellido paterno vacío — omitida.`); return; }
+    if (!nombres)    { warnings.push(`Fila ${idx + 1}: nombre vacío — omitida.`); return; }
+
+    const identificador = buildIdentifier(ap_paterno, ap_materno, nombres);
+
+    // collision check
+    if (seenIds[identificador]) {
+      // append last digit of codigo to disambiguate
+      const suffix = codigo.slice(-2);
+      warnings.push(`Fila ${idx + 1}: identificador "${identificador}" duplicado — se usará "${identificador}${suffix}".`);
+      participants.push({ codigo, ap_paterno, ap_materno, nombres, identificador: identificador + suffix });
+    } else {
+      seenIds[identificador] = true;
+      participants.push({ codigo, ap_paterno, ap_materno, nombres, identificador });
+    }
+  });
+
+  return { participants, warnings };
+}
+
+// ── Preview ───────────────────────────────────────────────────
+function previewList() {
+  const raw = $('list-input').value.trim();
+  if (!raw) { alert('Pega primero la lista de alumnos.'); return; }
+
+  const { participants, warnings } = parseTSV(raw);
+  parsedList = participants;
+
+  // count
+  $('preview-count').textContent = `${participants.length} participante${participants.length !== 1 ? 's' : ''} reconocido${participants.length !== 1 ? 's' : ''}`;
+
+  // warnings
+  const warnDiv = $('preview-warnings');
+  if (warnings.length > 0) {
+    warnDiv.innerHTML = warnings.map(w => `<div><i class="fa-solid fa-triangle-exclamation mr-1"></i>${w}</div>`).join('');
+    show('preview-warnings');
+  } else {
+    hide('preview-warnings');
+  }
+
+  // table
+  const tbody = $('preview-tbody');
+  tbody.innerHTML = '';
+  participants.forEach(p => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="px-3 py-2 font-mono text-xs text-slate-400">${p.codigo}</td>
+      <td class="px-3 py-2">${p.ap_paterno}</td>
+      <td class="px-3 py-2">${p.ap_materno}</td>
+      <td class="px-3 py-2">${p.nombres}</td>
+      <td class="px-3 py-2">
+        <span class="id-badge px-2 py-0.5 rounded text-xs font-mono text-emerald-400">${p.identificador}</span>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+
+  show('preview-panel');
+}
+
+// ── Save ──────────────────────────────────────────────────────
+async function saveList() {
+  const nombre = $('list-name').value.trim();
+  if (!nombre) { alert('Escribe el nombre de la lista antes de guardar.'); $('list-name').focus(); return; }
+  if (parsedList.length === 0) { alert('No hay participantes para guardar.'); return; }
+
+  const btn = $('save-btn');
+  const status = $('save-status');
+  btn.disabled = true;
+  status.textContent = 'Guardando…';
+  status.className = 'text-sm text-slate-400';
+
+  const payload = { nombre, lista: parsedList };
+  let error;
+
+  if (editingId) {
+    ({ error } = await sb.from('participant_lists').update(payload).eq('id', editingId));
+  } else {
+    ({ error } = await sb.from('participant_lists').insert([payload]));
+  }
+
+  if (error) {
+    status.textContent = 'Error: ' + error.message;
+    status.className = 'text-sm text-red-400';
+    btn.disabled = false;
+    return;
+  }
+
+  status.textContent = '✓ Guardado correctamente';
+  status.className = 'text-sm text-emerald-400';
+
+  setTimeout(() => {
+    showLibraryView();
+  }, 1200);
+}
+
+// ── Init ──────────────────────────────────────────────────────
+loadLibrary();
+</script>
+</body>
+</html>
