@@ -90,29 +90,73 @@
       <p class="text-xs text-slate-500">Incluye el nombre del curso, ciclo académico y sección/turno si aplica.</p>
     </div>
 
-    <!-- Pegar datos -->
+    <!-- Importar alumnos -->
     <div class="glass rounded-2xl border border-slate-700/50 p-5 space-y-4">
-      <div>
-        <label class="block text-sm font-semibold text-slate-300 mb-1">Lista de alumnos</label>
-        <p class="text-xs text-slate-500 mb-3">
-          Pega desde Excel o Google Sheets. Columnas requeridas en orden:
-          <span class="text-emerald-400 font-mono">Código · Apellido Paterno · Apellido Materno · Nombres</span>.
-          La fila de encabezado se ignora automáticamente.
-        </p>
 
-        <!-- Formato ejemplo -->
-        <div class="bg-slate-900 rounded-xl border border-slate-700 p-3 mb-3 text-xs font-mono text-slate-400 overflow-x-auto">
-          <div class="text-slate-600 mb-1">Ejemplo:</div>
-          <div>A00123&nbsp;&nbsp;&nbsp;Urteaga&nbsp;&nbsp;&nbsp;&nbsp;Mendoza&nbsp;&nbsp;&nbsp;Renan</div>
-          <div>A00456&nbsp;&nbsp;&nbsp;García&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;López&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Ana María</div>
-          <div>A00789&nbsp;&nbsp;&nbsp;Torres&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Ríos&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Carlos Alberto</div>
-        </div>
-
-        <textarea id="list-input" rows="10"
-          placeholder="Pega aquí la lista desde tu planilla..."
-          class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition-colors text-sm font-mono"></textarea>
+      <!-- Tabs -->
+      <div class="flex rounded-xl bg-slate-900/80 p-1 gap-1">
+        <button id="tab-excel" onclick="switchImportMode('excel')"
+          class="flex-1 py-2 rounded-lg text-sm font-semibold transition-colors bg-slate-700 text-white flex items-center justify-center gap-1.5">
+          <i class="fa-solid fa-table-cells"></i> Desde planilla
+        </button>
+        <button id="tab-canvas" onclick="switchImportMode('canvas')"
+          class="flex-1 py-2 rounded-lg text-sm font-semibold transition-colors text-slate-400 hover:text-white flex items-center justify-center gap-1.5">
+          <i class="fa-solid fa-graduation-cap"></i> Desde Canvas
+        </button>
       </div>
 
+      <!-- ── Excel / planilla ────────────────────── -->
+      <div id="import-excel" class="space-y-3">
+        <div>
+          <label class="block text-sm font-semibold text-slate-300 mb-1">Lista de alumnos</label>
+          <p class="text-xs text-slate-500 mb-3">
+            Pega desde Excel o Google Sheets. Columnas requeridas en orden:
+            <span class="text-emerald-400 font-mono">Código · Apellido Paterno · Apellido Materno · Nombres</span>.
+            La fila de encabezado se ignora automáticamente.
+          </p>
+          <div class="bg-slate-900 rounded-xl border border-slate-700 p-3 mb-3 text-xs font-mono text-slate-400 overflow-x-auto">
+            <div class="text-slate-600 mb-1">Ejemplo:</div>
+            <div>A00123&nbsp;&nbsp;&nbsp;Urteaga&nbsp;&nbsp;&nbsp;&nbsp;Mendoza&nbsp;&nbsp;&nbsp;Renan</div>
+            <div>A00456&nbsp;&nbsp;&nbsp;García&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;López&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Ana María</div>
+            <div>A00789&nbsp;&nbsp;&nbsp;Torres&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Ríos&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Carlos Alberto</div>
+          </div>
+          <textarea id="list-input" rows="10"
+            placeholder="Pega aquí la lista desde tu planilla..."
+            class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 transition-colors text-sm font-mono"></textarea>
+        </div>
+      </div>
+
+      <!-- ── Canvas CSV ───────────────────────────── -->
+      <div id="import-canvas" class="hidden space-y-3">
+        <div>
+          <label class="block text-sm font-semibold text-slate-300 mb-1">CSV de Canvas</label>
+          <p class="text-xs text-slate-500 mb-3">
+            Exporta el listado desde Canvas: <span class="text-indigo-400">People → Export → CSV</span>
+            (o el gradebook). El sistema lee las columnas <span class="text-indigo-400 font-mono">Student</span>
+            y <span class="text-indigo-400 font-mono">SIS User ID</span> automáticamente.
+          </p>
+          <!-- Ejemplo Canvas -->
+          <div class="bg-slate-900 rounded-xl border border-slate-700 p-3 mb-3 text-xs font-mono text-slate-400 overflow-x-auto">
+            <div class="text-slate-600 mb-1">Formato Canvas:</div>
+            <div class="text-indigo-400">Student,ID,SIS User ID,SIS Login ID,Section</div>
+            <div>"Urteaga Mendoza, Renan",101,A00123,r.urteaga@univ.edu,A</div>
+            <div>"García López, Ana María",102,A00456,a.garcia@univ.edu,A</div>
+          </div>
+          <!-- File upload -->
+          <div class="flex items-center gap-3 mb-3">
+            <label class="flex items-center gap-2 px-4 py-2 bg-indigo-700 hover:bg-indigo-600 rounded-xl text-sm font-semibold cursor-pointer transition-colors">
+              <i class="fa-solid fa-file-arrow-up"></i> Cargar archivo .csv
+              <input type="file" accept=".csv,text/csv" onchange="handleCanvasFile(this)" class="hidden">
+            </label>
+            <span class="text-xs text-slate-500">o pega el contenido abajo</span>
+          </div>
+          <textarea id="canvas-input" rows="8"
+            placeholder="Pega aquí el contenido del CSV de Canvas…"
+            class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-colors text-sm font-mono"></textarea>
+        </div>
+      </div>
+
+      <!-- Botón previsualizar (único para ambos modos) -->
       <button onclick="previewList()"
         class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2">
         <i class="fa-solid fa-eye"></i> Previsualizar lista
@@ -169,10 +213,17 @@
       <button onclick="showLibraryView()" class="flex items-center gap-2 text-slate-400 hover:text-white text-sm transition-colors">
         <i class="fa-solid fa-arrow-left"></i> Volver a la biblioteca
       </button>
-      <button onclick="exportCSV()"
-        class="flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-xl text-sm font-semibold transition-colors">
-        <i class="fa-solid fa-file-csv"></i> Exportar CSV
-      </button>
+      <div class="flex items-center gap-2">
+        <button onclick="exportCanvasCSV()"
+          class="flex items-center gap-2 px-4 py-2 bg-indigo-700 hover:bg-indigo-600 rounded-xl text-sm font-semibold transition-colors"
+          title="Exporta en formato compatible con la importación de calificaciones de Canvas LMS">
+          <i class="fa-solid fa-graduation-cap"></i> Exportar Canvas
+        </button>
+        <button onclick="exportCSV()"
+          class="flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-xl text-sm font-semibold transition-colors">
+          <i class="fa-solid fa-file-csv"></i> Exportar CSV
+        </button>
+      </div>
     </div>
 
     <h2 id="results-title" class="text-xl font-bold text-white">Resultados</h2>
@@ -209,6 +260,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let editingId = null;   // uuid of list being edited, null = new
 let parsedList = [];    // current parsed participants
+let importMode = 'excel'; // 'excel' | 'canvas'
 
 // ── Helpers ───────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -225,6 +277,23 @@ function buildIdentifier(apPaterno, apMaterno, nombres) {
 }
 
 // ── Views ─────────────────────────────────────────────────────
+function switchImportMode(mode) {
+  importMode = mode;
+  const activeClass   = 'flex-1 py-2 rounded-lg text-sm font-semibold transition-colors bg-slate-700 text-white flex items-center justify-center gap-1.5';
+  const inactiveClass = 'flex-1 py-2 rounded-lg text-sm font-semibold transition-colors text-slate-400 hover:text-white flex items-center justify-center gap-1.5';
+  if (mode === 'excel') {
+    $('tab-excel').className  = activeClass;
+    $('tab-canvas').className = inactiveClass;
+    show('import-excel');
+    hide('import-canvas');
+  } else {
+    $('tab-canvas').className = activeClass;
+    $('tab-excel').className  = inactiveClass;
+    hide('import-excel');
+    show('import-canvas');
+  }
+}
+
 function showLibraryView() {
   show('view-library');
   hide('view-create');
@@ -240,11 +309,14 @@ function showCreateView(listData = null) {
   // reset
   $('list-name').value = '';
   $('list-input').value = '';
+  $('canvas-input').value = '';
   $('save-status').textContent = '';
   $('save-btn').disabled = false;
   $('preview-tbody').innerHTML = '';
   parsedList = [];
   editingId = null;
+  importMode = 'excel';
+  switchImportMode('excel');
 
   if (listData) {
     // editing existing list
@@ -380,12 +452,131 @@ function parseTSV(raw) {
   return { participants, warnings };
 }
 
+// ── Canvas CSV parser ─────────────────────────────────────────
+// Splits one CSV line respecting quoted fields
+function parseCSVLine(line) {
+  const result = [];
+  let inQuotes = false;
+  let current = '';
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+      else { inQuotes = !inQuotes; }
+    } else if (ch === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+function parseCanvasCSV(text) {
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    .split('\n').filter(l => l.trim());
+  const participants = [];
+  const warnings = [];
+
+  if (lines.length < 2) {
+    warnings.push('El archivo no tiene datos suficientes.');
+    return { participants, warnings };
+  }
+
+  // Header row
+  const header = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/\s+/g, ' '));
+  const studentIdx = header.findIndex(h => h === 'student' || h === 'estudiante');
+  const sisIdx     = header.findIndex(h => /sis\s*user\s*id/i.test(h));
+
+  if (studentIdx === -1) {
+    warnings.push('No se encontró la columna "Student" en el encabezado del CSV.');
+    return { participants, warnings };
+  }
+  if (sisIdx === -1) {
+    warnings.push('No se encontró la columna "SIS User ID" en el encabezado del CSV.');
+    return { participants, warnings };
+  }
+
+  const seenIds = {};
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseCSVLine(lines[i]);
+    const studentName = (cols[studentIdx] || '').trim();
+    const sisUserId   = (cols[sisIdx]     || '').trim();
+
+    // Omitir fila de totales/puntos (Canvas agrega una fila vacía al final)
+    if (!studentName) continue;
+    // Omitir alumno de prueba de Canvas
+    if (/test\s*student/i.test(studentName)) continue;
+    // Omitir si no tiene SIS User ID
+    if (!sisUserId) {
+      warnings.push(`Fila ${i + 1}: sin SIS User ID ("${studentName}") — omitida.`);
+      continue;
+    }
+
+    // Canvas exporta nombres como "Apellidos, Nombres" (apellidos pueden ser compuestos)
+    let ap_paterno = '', ap_materno = '', nombres = '';
+    const commaPos = studentName.indexOf(',');
+    if (commaPos > -1) {
+      const apellidos = studentName.substring(0, commaPos).trim();
+      nombres = studentName.substring(commaPos + 1).trim();
+      const parts = apellidos.split(/\s+/);
+      ap_paterno = parts[0] || '';
+      ap_materno = parts.slice(1).join(' ') || '';
+    } else {
+      // Sin coma: tratar todo como apellido paterno, dejar nombres vacío → aviso
+      const parts = studentName.split(/\s+/);
+      ap_paterno = parts[0] || '';
+      ap_materno = parts[1] || '';
+      nombres    = parts.slice(2).join(' ') || ap_paterno;
+      warnings.push(`Fila ${i + 1}: nombre sin coma ("${studentName}") — se interpretó como posible error de formato.`);
+    }
+
+    if (!ap_paterno || !nombres) {
+      warnings.push(`Fila ${i + 1}: no se pudo interpretar el nombre "${studentName}" — omitida.`);
+      continue;
+    }
+
+    const identificador = buildIdentifier(ap_paterno, ap_materno, nombres);
+    if (seenIds[identificador]) {
+      const suffix = sisUserId.slice(-2);
+      warnings.push(`Fila ${i + 1}: identificador "${identificador}" duplicado — se usará "${identificador}${suffix}".`);
+      participants.push({ codigo: sisUserId, ap_paterno, ap_materno, nombres, identificador: identificador + suffix });
+    } else {
+      seenIds[identificador] = true;
+      participants.push({ codigo: sisUserId, ap_paterno, ap_materno, nombres, identificador });
+    }
+  }
+
+  return { participants, warnings };
+}
+
+function handleCanvasFile(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    $('canvas-input').value = e.target.result;
+    previewList(); // auto-preview on file load
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
 // ── Preview ───────────────────────────────────────────────────
 function previewList() {
-  const raw = $('list-input').value.trim();
-  if (!raw) { alert('Pega primero la lista de alumnos.'); return; }
-
-  const { participants, warnings } = parseTSV(raw);
+  let result;
+  if (importMode === 'canvas') {
+    const raw = $('canvas-input').value.trim();
+    if (!raw) { alert('Carga un archivo CSV de Canvas o pega su contenido.'); return; }
+    result = parseCanvasCSV(raw);
+  } else {
+    const raw = $('list-input').value.trim();
+    if (!raw) { alert('Pega primero la lista de alumnos.'); return; }
+    result = parseTSV(raw);
+  }
+  const { participants, warnings } = result;
   parsedList = participants;
 
   // count
@@ -474,7 +665,8 @@ async function showResultsView(listId, listNombre) {
 }
 
 async function loadResults(listId) {
-  const { data, error } = await sb
+  // Intento 1: resultados vinculados a esta lista
+  let { data, error } = await sb
     .from('session_results')
     .select('*')
     .eq('participant_list_id', listId)
@@ -485,10 +677,29 @@ async function loadResults(listId) {
     return;
   }
 
+  // Intento 2: si no hay resultados vinculados, mostrar TODAS las sesiones
+  // (ocurre cuando la sesión se inició sin seleccionar lista en index.html)
+  let sinVinculo = false;
   if (!data || data.length === 0) {
-    $('results-loading').innerHTML = `<p class="text-slate-500">No hay resultados registrados para esta lista aún.<br>
-      <span class="text-xs">Realiza una sesión cerrada con esta lista para que aparezcan aquí.</span></p>`;
+    const res2 = await sb
+      .from('session_results')
+      .select('*')
+      .is('participant_list_id', null)
+      .order('completado_en', { ascending: true });
+    if (!res2.error && res2.data && res2.data.length > 0) {
+      data = res2.data;
+      sinVinculo = true;
+    }
+  }
+
+  if (!data || data.length === 0) {
+    $('results-loading').innerHTML = `<p class="text-slate-500">No hay resultados registrados aún.<br>
+      <span class="text-xs">Realiza una sesión con participantes y finalízala para que aparezcan aquí.</span></p>`;
     return;
+  }
+
+  if (sinVinculo) {
+    console.warn('Mostrando sesiones sin lista vinculada. Para vincular a una lista, selecciónala en index.html antes de iniciar.');
   }
 
   // Obtener nombres de cuestionarios
@@ -503,6 +714,7 @@ async function loadResults(listId) {
   const sessionMap = {}; // sid → { id, label, date }
   const participantSet = new Set();
   const grid = {}; // identificador → { sid: nota }
+  const participantCodigos = {}; // identificador → codigo
 
   data.forEach(row => {
     const sid = row.quiz_session_id;
@@ -513,6 +725,10 @@ async function loadResults(listId) {
     participantSet.add(row.participante_identificador);
     if (!grid[row.participante_identificador]) grid[row.participante_identificador] = {};
     grid[row.participante_identificador][sid] = row.nota;
+    // capturar código (SIS User ID para Canvas)
+    if (row.participante_codigo && !participantCodigos[row.participante_identificador]) {
+      participantCodigos[row.participante_identificador] = row.participante_codigo;
+    }
   });
 
   // Ordenar sesiones cronológicamente, etiquetar si no tienen nombre de quiz
@@ -520,7 +736,24 @@ async function loadResults(listId) {
   sessions.forEach((s, i) => { if (!s.name) s.name = `Sesión ${i + 1}`; });
 
   const participants = [...participantSet].sort();
-  resultsTableData = { sessions, participants, grid };
+
+  // Obtener nombres completos desde la lista de participantes (para Canvas export)
+  const participantNames = {}; // identificador → "ApPaterno ApMaterno, Nombres"
+  try {
+    const { data: listData } = await sb
+      .from('participant_lists')
+      .select('lista')
+      .eq('id', listId)
+      .single();
+    if (listData && Array.isArray(listData.lista)) {
+      listData.lista.forEach(p => {
+        const nombre = `${p.ap_paterno} ${p.ap_materno}, ${p.nombres}`.trim();
+        participantNames[p.identificador] = nombre;
+      });
+    }
+  } catch(_) { /* si falla, se usan los identificadores como nombres */ }
+
+  resultsTableData = { sessions, participants, grid, participantCodigos, participantNames };
 
   hide('results-loading');
   renderResultsTable();
@@ -637,6 +870,43 @@ function exportCSV() {
   const a    = document.createElement('a');
   a.href     = url;
   a.download = `resultados_${currentResultsListName.replace(/[^a-z0-9áéíóúñ]/gi, '_')}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportCanvasCSV() {
+  if (!resultsTableData) return;
+  const { sessions, participants, grid, participantCodigos, participantNames } = resultsTableData;
+
+  // Canvas gradebook format:
+  // Student, ID, SIS User ID, SIS Login ID, Section, [assignment1], [assignment2], ...
+  // "Student" = nombre completo (o identificador si no está disponible)
+  // "ID"      = ID interno de Canvas (dejamos vacío, Canvas lo ignora en importación)
+  // "SIS User ID" = código del alumno (usado para identificar al estudiante en Canvas)
+  const header = ['Student', 'ID', 'SIS User ID', ...sessions.map(s => s.name)];
+
+  const rows = participants.map(p => {
+    const fullName = participantNames[p] || p; // fallback al identificador
+    const codigo   = participantCodigos[p] || '';
+    const grades   = sessions.map(s => {
+      const nota = grid[p]?.[s.id];
+      return nota !== undefined && nota !== null ? nota.toFixed(2) : '';
+    });
+    return [fullName, '', codigo, ...grades];
+  });
+
+  const csv = [header, ...rows]
+    .map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
+    .join('\r\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  const safeName = currentResultsListName.replace(/[^a-z0-9áéíóúñ]/gi, '_');
+  a.download = `canvas_${safeName}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
