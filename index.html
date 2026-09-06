@@ -104,9 +104,15 @@
 
         <!-- ── VISTA 1: CONFIGURACIÓN (Presentador) ────────────────────────── -->
         <section id="view-setup" class="my-auto max-w-2xl mx-auto w-full space-y-6 py-6 flex-col">
-            <div class="text-center space-y-2">
-                <h2 class="text-3xl font-extrabold text-white">Iniciar Cuestionario en Vivo</h2>
-                <p class="text-slate-400 text-sm">Pega las celdas copiadas de Google Sheets: Pregunta · Opción A · B · C · D · Correcta · URL Imagen (opcional)</p>
+            <div class="flex items-start justify-between">
+                <div class="text-center flex-1 space-y-2">
+                    <h2 class="text-3xl font-extrabold text-white">Iniciar Cuestionario en Vivo</h2>
+                    <p class="text-slate-400 text-sm">Pega las celdas copiadas de Google Sheets: Pregunta · Opción A · B · C · D · Correcta · URL Imagen (opcional)</p>
+                </div>
+                <button onclick="initAiConfig()" title="Gestionar IAs para calificación"
+                    class="ml-4 shrink-0 text-xs px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-indigo-600 rounded-xl text-slate-400 hover:text-indigo-300 transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-robot"></i> IAs
+                </button>
             </div>
 
             <!-- Selector de biblioteca -->
@@ -635,6 +641,29 @@
                     ← Volver
                 </button>
             </div>
+            <!-- Selector de IA para calificación -->
+            <div class="bg-slate-800/60 border border-slate-700 rounded-2xl p-4 space-y-3">
+                <div class="flex items-center justify-between">
+                    <label class="text-xs font-semibold text-indigo-300 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-robot"></i> IA para sugerencias de calificación
+                    </label>
+                    <button onclick="initAiConfig()" class="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-lg text-slate-300 transition">
+                        <i class="fa-solid fa-gear mr-1"></i>Gestionar IAs
+                    </button>
+                </div>
+                <div class="flex items-center gap-2">
+                    <select id="grading-ai-select"
+                        class="flex-1 bg-slate-900 border border-slate-600 rounded-xl p-2 text-sm text-white focus:outline-none focus:border-indigo-500 transition"
+                        onchange="onGradingAiSelect()">
+                        <option value="">— Cargando IAs disponibles… —</option>
+                    </select>
+                    <button onclick="probeSelectedGradingAi()" id="btn-probe-grading-ai"
+                        class="text-xs px-3 py-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-xl text-slate-300 transition whitespace-nowrap">
+                        <i class="fa-solid fa-plug mr-1"></i>Verificar
+                    </button>
+                </div>
+                <p id="grading-ai-status" class="text-xs text-slate-500">Selecciona una IA registrada para activar las sugerencias.</p>
+            </div>
             <div id="grading-content" class="space-y-6"></div>
             <div class="flex items-center gap-3">
                 <button onclick="saveGrades()"
@@ -642,6 +671,84 @@
                     <i class="fa-solid fa-floppy-disk mr-2"></i>Guardar calificaciones
                 </button>
                 <span id="grading-save-status" class="text-xs text-slate-400"></span>
+            </div>
+        </section>
+
+        <!-- ── VISTA 10: GESTIÓN DE IAs ──────────────────────────────────── -->
+        <section id="view-ai-config" class="hidden flex flex-col w-full max-w-2xl mx-auto py-6 space-y-6 fade-in">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-xl font-extrabold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-robot text-indigo-400"></i> IAs para Calificación
+                    </h2>
+                    <p class="text-xs text-slate-400 mt-0.5">Registra y administra los proveedores de IA disponibles.</p>
+                </div>
+                <button onclick="showView('view-setup')"
+                    class="text-xs px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-300 transition">
+                    ← Volver
+                </button>
+            </div>
+
+            <!-- Lista de IAs registradas -->
+            <div id="ai-list-container" class="space-y-3">
+                <div class="text-slate-400 text-sm text-center py-6">⏳ Cargando…</div>
+            </div>
+
+            <!-- Formulario agregar nueva IA -->
+            <div class="bg-slate-800 border border-indigo-800/50 rounded-2xl p-5 space-y-4">
+                <p class="text-xs font-semibold text-indigo-300 uppercase tracking-wider">
+                    <i class="fa-solid fa-plus mr-1"></i>Registrar nueva IA
+                </p>
+
+                <!-- Plantilla de proveedor -->
+                <div class="space-y-1">
+                    <label class="text-xs text-slate-400">Proveedor</label>
+                    <select id="ai-new-proveedor" onchange="onAiProveedorChange()"
+                        class="w-full bg-slate-900 border border-slate-600 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                        <option value="deepseek">DeepSeek</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="custom">Personalizado</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="space-y-1">
+                        <label class="text-xs text-slate-400">Nombre para mostrar</label>
+                        <input type="text" id="ai-new-nombre" placeholder="ej. DeepSeek Chat"
+                            class="w-full bg-slate-900 border border-slate-600 rounded-xl p-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-xs text-slate-400">Modelo</label>
+                        <input type="text" id="ai-new-modelo" placeholder="ej. deepseek-chat"
+                            class="w-full bg-slate-900 border border-slate-600 rounded-xl p-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                    </div>
+                </div>
+
+                <div class="space-y-1">
+                    <label class="text-xs text-slate-400">URL del API</label>
+                    <input type="text" id="ai-new-url" placeholder="https://api.deepseek.com/chat/completions"
+                        class="w-full bg-slate-900 border border-slate-600 rounded-xl p-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                </div>
+
+                <div class="space-y-1">
+                    <label class="text-xs text-slate-400">API Key</label>
+                    <div class="flex gap-2">
+                        <input type="password" id="ai-new-key" placeholder="sk-…"
+                            class="flex-1 bg-slate-900 border border-slate-600 rounded-xl p-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                        <button onclick="toggleNewKeyVisibility()"
+                            class="px-3 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-xl text-slate-300 transition">
+                            <i class="fa-solid fa-eye" id="new-key-eye"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <button onclick="saveNewAiProvider()"
+                        class="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-sm transition">
+                        <i class="fa-solid fa-floppy-disk mr-2"></i>Guardar IA
+                    </button>
+                    <span id="ai-save-status" class="text-xs text-slate-400"></span>
+                </div>
             </div>
         </section>
 
@@ -691,7 +798,7 @@
     }
 
     function showView(id) {
-        ['view-login','view-setup','view-lobby-presenter','view-lobby-participant','view-presenter','view-nickname','view-participant','view-exam-presenter','view-exam-participant','view-ended','view-boleta','view-grading'].forEach(v => {
+        ['view-login','view-setup','view-lobby-presenter','view-lobby-participant','view-presenter','view-nickname','view-participant','view-exam-presenter','view-exam-participant','view-ended','view-boleta','view-grading','view-ai-config'].forEach(v => {
             $(v)?.classList.add('hidden');
             $(v)?.classList.remove('flex');
         });
@@ -1778,9 +1885,15 @@
                     <i class="fa-solid fa-pen-to-square mr-2"></i>Calificar respuestas abiertas
                 </button>` : ''}
 
-                <button onclick="resetApp()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">
-                    Volver al inicio
-                </button>
+                <div class="flex gap-3">
+                    <button onclick="resetApp()" class="flex-1 py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">
+                        Volver al inicio
+                    </button>
+                    <button onclick="initAiConfig()" title="Gestionar IAs para calificación"
+                        class="px-4 py-3 bg-slate-700 hover:bg-slate-600 border border-slate-600 hover:border-indigo-600 rounded-xl text-slate-300 hover:text-indigo-300 transition text-sm">
+                        <i class="fa-solid fa-robot mr-1"></i>IAs
+                    </button>
+                </div>
             </div>`;
     }
 
@@ -2511,12 +2624,261 @@
     // Resultados cargados desde Supabase para calificar
     let gradingResults = [];
 
+    // ════════════════════════════════════════════════════════════════════════════
+    // v2.8 — GESTIÓN DE IAs
+    // ════════════════════════════════════════════════════════════════════════════
+
+    let aiProviders = [];   // cargados desde Supabase
+    let selectedAiId = null;
+
+    const AI_TEMPLATES = {
+        deepseek: { nombre: 'DeepSeek Chat', api_url: 'https://api.deepseek.com/chat/completions', modelo: 'deepseek-chat' },
+        openai:   { nombre: 'OpenAI GPT-4o Mini', api_url: 'https://api.openai.com/v1/chat/completions', modelo: 'gpt-4o-mini' },
+        custom:   { nombre: '', api_url: '', modelo: '' }
+    };
+
+    function onAiProveedorChange() {
+        const prov = $('ai-new-proveedor')?.value || 'deepseek';
+        const tpl  = AI_TEMPLATES[prov] || AI_TEMPLATES.custom;
+        if ($('ai-new-nombre') && !$('ai-new-nombre').value) $('ai-new-nombre').value = tpl.nombre;
+        if ($('ai-new-url'))    $('ai-new-url').value    = tpl.api_url;
+        if ($('ai-new-modelo')) $('ai-new-modelo').value = tpl.modelo;
+    }
+
+    function toggleNewKeyVisibility() {
+        const inp = $('ai-new-key');
+        const ico = $('new-key-eye');
+        if (!inp) return;
+        if (inp.type === 'password') { inp.type = 'text';     ico?.classList.replace('fa-eye','fa-eye-slash'); }
+        else                         { inp.type = 'password'; ico?.classList.replace('fa-eye-slash','fa-eye'); }
+    }
+
+    async function loadAiProviders() {
+        const { data, error } = await sb.from('ai_providers').select('*').order('creado_en');
+        if (error) return [];
+        return data || [];
+    }
+
+    async function initAiConfig() {
+        showView('view-ai-config');
+        $('ai-save-status').textContent = '';
+        // Pre-rellenar plantilla por defecto
+        onAiProveedorChange();
+        // Cargar lista
+        const container = $('ai-list-container');
+        container.innerHTML = '<div class="text-slate-400 text-sm text-center py-6">⏳ Cargando…</div>';
+        aiProviders = await loadAiProviders();
+        renderAiList();
+    }
+
+    function renderAiList() {
+        const container = $('ai-list-container');
+        if (!aiProviders.length) {
+            container.innerHTML = '<p class="text-slate-500 text-sm text-center py-4">No hay IAs registradas. Agrega una abajo.</p>';
+            return;
+        }
+        container.innerHTML = aiProviders.map(p => {
+            const estadoBadge = {
+                ok:          '<span class="text-xs bg-emerald-900/60 border border-emerald-700/40 text-emerald-300 px-2 py-0.5 rounded-full">✅ Disponible</span>',
+                sin_saldo:   '<span class="text-xs bg-red-900/60 border border-red-700/40 text-red-300 px-2 py-0.5 rounded-full">❌ Sin saldo</span>',
+                key_invalida:'<span class="text-xs bg-red-900/60 border border-red-700/40 text-red-300 px-2 py-0.5 rounded-full">❌ Key inválida</span>',
+                rate_limit:  '<span class="text-xs bg-amber-900/60 border border-amber-700/40 text-amber-300 px-2 py-0.5 rounded-full">⚠️ Rate limit</span>',
+                error:       '<span class="text-xs bg-slate-700 border border-slate-600 text-slate-400 px-2 py-0.5 rounded-full">⚠️ Error</span>'
+            }[p.ultimo_estado] || '<span class="text-xs text-slate-500">— Sin verificar</span>';
+
+            const verificadoStr = p.verificado_en
+                ? `<span class="text-slate-600 text-xs">Verificado: ${new Date(p.verificado_en).toLocaleString()}</span>`
+                : '';
+
+            return `<div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 space-y-2" id="ai-row-${p.id}">
+                <div class="flex items-start justify-between gap-2">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <p class="text-sm font-bold text-white">${p.nombre}</p>
+                            ${p.activo ? '' : '<span class="text-xs bg-slate-700 text-slate-400 px-2 py-0.5 rounded-full">Inactiva</span>'}
+                            ${estadoBadge}
+                        </div>
+                        <p class="text-xs text-slate-500 mt-0.5 truncate">${p.api_url} · <span class="text-indigo-400">${p.modelo}</span></p>
+                        ${verificadoStr}
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        <button onclick="probeAiById('${p.id}')"
+                            class="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-lg text-slate-300 transition">
+                            <i class="fa-solid fa-plug mr-1"></i>Probar
+                        </button>
+                        <button onclick="toggleAiActive('${p.id}', ${p.activo})"
+                            class="text-xs px-2 py-1 ${p.activo ? 'bg-amber-900/40 hover:bg-amber-900/60 border-amber-700/40 text-amber-300' : 'bg-emerald-900/40 hover:bg-emerald-900/60 border-emerald-700/40 text-emerald-300'} border rounded-lg transition">
+                            ${p.activo ? 'Desactivar' : 'Activar'}
+                        </button>
+                        <button onclick="deleteAiProvider('${p.id}')"
+                            class="text-xs px-2 py-1 bg-red-900/40 hover:bg-red-900/60 border border-red-700/40 text-red-300 rounded-lg transition">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    async function probeAiById(id) {
+        const p = aiProviders.find(x => x.id === id);
+        if (!p) return;
+        const row = $(`ai-row-${id}`);
+        if (row) row.style.opacity = '0.6';
+
+        const estado = await probeAiProvider(p);
+
+        // Guardar estado en Supabase
+        await sb.from('ai_providers').update({
+            ultimo_estado: estado,
+            verificado_en: new Date().toISOString()
+        }).eq('id', id);
+
+        // Actualizar local
+        const idx = aiProviders.findIndex(x => x.id === id);
+        if (idx >= 0) { aiProviders[idx].ultimo_estado = estado; aiProviders[idx].verificado_en = new Date().toISOString(); }
+        if (row) row.style.opacity = '1';
+        renderAiList();
+    }
+
+    async function probeAiProvider(p) {
+        try {
+            const res = await fetch(p.api_url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${p.api_key}` },
+                body: JSON.stringify({
+                    model: p.modelo,
+                    messages: [{ role: 'user', content: 'test' }],
+                    max_tokens: 1
+                })
+            });
+            if (res.status === 200) return 'ok';
+            if (res.status === 401 || res.status === 403) return 'key_invalida';
+            if (res.status === 402) return 'sin_saldo';
+            if (res.status === 429) return 'rate_limit';
+            // Algunos proveedores devuelven 200 con error en body
+            const json = await res.json().catch(() => ({}));
+            if (json.error?.code === 'insufficient_quota') return 'sin_saldo';
+            return 'error';
+        } catch(e) {
+            return 'error';
+        }
+    }
+
+    async function saveNewAiProvider() {
+        const statusEl = $('ai-save-status');
+        const nombre   = ($('ai-new-nombre')?.value || '').trim();
+        const api_url  = ($('ai-new-url')?.value    || '').trim();
+        const api_key  = ($('ai-new-key')?.value    || '').trim();
+        const modelo   = ($('ai-new-modelo')?.value || '').trim();
+        const prov     = $('ai-new-proveedor')?.value || 'custom';
+
+        if (!nombre || !api_url || !api_key || !modelo) {
+            statusEl.textContent = '⚠️ Completa todos los campos.'; return;
+        }
+        statusEl.textContent = '⏳ Guardando…';
+
+        const { data, error } = await sb.from('ai_providers').insert([{
+            nombre, proveedor: prov, api_url, api_key, modelo, activo: true
+        }]).select().single();
+
+        if (error) {
+            statusEl.textContent = '⚠️ Error al guardar: ' + error.message; return;
+        }
+
+        statusEl.textContent = '✅ IA registrada correctamente';
+        aiProviders.push(data);
+        renderAiList();
+
+        // Limpiar formulario
+        ['ai-new-nombre','ai-new-key'].forEach(id => { if ($(id)) $(id).value = ''; });
+        onAiProveedorChange();
+
+        // Probar automáticamente
+        if (data?.id) probeAiById(data.id);
+    }
+
+    async function toggleAiActive(id, activo) {
+        await sb.from('ai_providers').update({ activo: !activo }).eq('id', id);
+        const idx = aiProviders.findIndex(x => x.id === id);
+        if (idx >= 0) aiProviders[idx].activo = !activo;
+        renderAiList();
+    }
+
+    async function deleteAiProvider(id) {
+        if (!confirm('¿Eliminar esta IA? Esta acción no se puede deshacer.')) return;
+        await sb.from('ai_providers').delete().eq('id', id);
+        aiProviders = aiProviders.filter(x => x.id !== id);
+        renderAiList();
+    }
+
+    // ── SELECTOR DE IA EN PANTALLA DE CALIFICACIÓN ────────────────────────────
+
+    function populateGradingAiSelect() {
+        const sel = $('grading-ai-select');
+        if (!sel) return;
+        const activas = aiProviders.filter(p => p.activo);
+        if (!activas.length) {
+            sel.innerHTML = '<option value="">— Sin IAs registradas. Registra una primero. —</option>';
+            return;
+        }
+        sel.innerHTML = '<option value="">— Selecciona una IA —</option>' +
+            activas.map(p => {
+                const badge = p.ultimo_estado === 'ok' ? '✅' : p.ultimo_estado ? '⚠️' : '○';
+                return `<option value="${p.id}">${badge} ${p.nombre} (${p.modelo})</option>`;
+            }).join('');
+        // Preseleccionar el último usado
+        const lastId = localStorage.getItem('last_ai_id');
+        if (lastId && activas.find(p => p.id === lastId)) sel.value = lastId;
+        onGradingAiSelect();
+    }
+
+    function onGradingAiSelect() {
+        const sel = $('grading-ai-select');
+        if (!sel) return;
+        selectedAiId = sel.value || null;
+        if (selectedAiId) localStorage.setItem('last_ai_id', selectedAiId);
+        const p = aiProviders.find(x => x.id === selectedAiId);
+        const statusEl = $('grading-ai-status');
+        if (!statusEl) return;
+        if (!p) { statusEl.textContent = 'Selecciona una IA para activar las sugerencias.'; statusEl.className = 'text-xs text-slate-500'; return; }
+        const msgs = {
+            ok:          ['✅ Disponible — lista para sugerir calificaciones.', 'text-xs text-emerald-400'],
+            sin_saldo:   ['❌ Sin saldo. Verifica los créditos del proveedor.', 'text-xs text-red-400'],
+            key_invalida:['❌ API Key inválida. Regístrala nuevamente.', 'text-xs text-red-400'],
+            rate_limit:  ['⚠️ Rate limit activo. Espera unos minutos.', 'text-xs text-amber-400'],
+            error:       ['⚠️ Error de conexión. Prueba con "Verificar".', 'text-xs text-amber-400']
+        };
+        const [msg, cls] = msgs[p.ultimo_estado] || ['○ Sin verificar. Presiona "Verificar" para probarla.', 'text-xs text-slate-400'];
+        statusEl.textContent = msg; statusEl.className = cls;
+    }
+
+    async function probeSelectedGradingAi() {
+        if (!selectedAiId) { alert('Selecciona primero una IA.'); return; }
+        const btn = $('btn-probe-grading-ai');
+        if (btn) btn.disabled = true;
+        const p = aiProviders.find(x => x.id === selectedAiId);
+        if (!p) return;
+        const estado = await probeAiProvider(p);
+        await sb.from('ai_providers').update({ ultimo_estado: estado, verificado_en: new Date().toISOString() }).eq('id', selectedAiId);
+        const idx = aiProviders.findIndex(x => x.id === selectedAiId);
+        if (idx >= 0) { aiProviders[idx].ultimo_estado = estado; aiProviders[idx].verificado_en = new Date().toISOString(); }
+        populateGradingAiSelect();
+        if (btn) btn.disabled = false;
+    }
+
     async function initGradingMode() {
         showView('view-grading');
         $('grading-session-name').textContent = sessionData.name || '';
         $('grading-save-status').textContent = '';
         gradingData = {};
         gradingResults = [];
+
+        // Cargar IAs disponibles
+        const sel = $('grading-ai-select');
+        if (sel) sel.innerHTML = '<option value="">— Cargando IAs… —</option>';
+        aiProviders = await loadAiProviders();
+        populateGradingAiSelect();
 
         // Cargar resultados de Supabase
         const { data, error } = await sb.from('session_results')
@@ -2627,49 +2989,69 @@
     async function suggestGrade(pid, idx, maxPts) {
         const statusEl = $(`suggest-status-${pid}-${idx}`);
         if (!statusEl) return;
+
+        // Obtener proveedor de IA seleccionado
+        if (!selectedAiId) {
+            statusEl.textContent = '⚠️ Selecciona una IA en el selector de arriba.';
+            statusEl.classList.remove('hidden');
+            return;
+        }
+        const p = aiProviders.find(x => x.id === selectedAiId);
+        if (!p) {
+            statusEl.textContent = '⚠️ IA no encontrada. Recarga la pantalla.';
+            statusEl.classList.remove('hidden');
+            return;
+        }
+
         statusEl.textContent = '⏳ Consultando IA…';
         statusEl.classList.remove('hidden');
 
-        const q      = sessionData.questions[idx];
-        const row    = gradingResults.find(r => r.participante_codigo === pid);
-        const texto  = row?.respuestas?.[idx]?.respuesta_dada || '';
+        const q     = sessionData.questions[idx];
+        const row   = gradingResults.find(r => r.participante_codigo === pid);
+        const texto = row?.respuestas?.[idx]?.respuesta_dada || '(sin respuesta)';
 
-        const DEEPSEEK_KEY = 'sk-7d2049b03c504a1a' + '9e4b64e3cd99e0da';
-        const prompt = `Eres un profesor evaluando una respuesta de estudiante.
+        const prompt = `Eres un profesor evaluando la calidad de una respuesta de un estudiante.
 Pregunta: "${q.pregunta}"
 Respuesta del estudiante: "${texto}"
-Puntaje máximo: ${maxPts}
-Asigna una calificación numérica de 0 a ${maxPts} (puedes usar decimales de 0.5) y escribe una breve justificación (máximo 2 oraciones).
-Responde SOLO en formato JSON: {"puntaje": <número>, "justificacion": "<texto>"}`;
+Puntaje máximo de la pregunta: ${maxPts}
+
+Evalúa la calidad de la respuesta y sugiere un RANGO de calificación (mínimo y máximo) considerando posibles variaciones en el criterio del profesor. Usa decimales de 0.5 si aplica.
+Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": <número>, "justificacion": "<máximo 2 oraciones>"}`;
 
         try {
-            const res = await fetch('https://api.deepseek.com/chat/completions', {
+            const res = await fetch(p.api_url, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_KEY}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${p.api_key}` },
                 body: JSON.stringify({
-                    model: 'deepseek-chat',
+                    model: p.modelo,
                     messages: [{ role: 'user', content: prompt }],
-                    max_tokens: 200,
+                    max_tokens: 250,
                     temperature: 0.3
                 })
             });
-            const json = await res.json();
-            const raw  = json.choices?.[0]?.message?.content || '';
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const json  = await res.json();
+            const raw   = json.choices?.[0]?.message?.content || '';
             const match = raw.match(/\{[\s\S]*\}/);
-            if (!match) throw new Error('Respuesta inesperada');
-            const parsed = JSON.parse(match[0]);
-            const pts    = Math.min(maxPts, Math.max(0, parseFloat(parsed.puntaje) || 0));
-            const anot   = parsed.justificacion || '';
+            if (!match) throw new Error('Respuesta inesperada del modelo');
+            const parsed  = JSON.parse(match[0]);
+            const pMin    = Math.min(maxPts, Math.max(0, parseFloat(parsed.puntaje_min) || 0));
+            const pMax    = Math.min(maxPts, Math.max(pMin, parseFloat(parsed.puntaje_max) || pMin));
+            const justif  = parsed.justificacion || '';
 
-            // Actualizar UI
-            const ptsInput  = $(`pts-${pid}-${idx}`);
+            // Mostrar rango como sugerencia — no auto-rellena el campo numérico
+            statusEl.innerHTML = `<span class="font-semibold text-amber-300">💡 ${p.nombre} sugiere: ${pMin}–${pMax} / ${maxPts} pts</span>
+                <br><span class="text-slate-400">${justif}</span>`;
+
+            // Pre-rellenar anotación con la justificación si está vacía
             const anotInput = $(`anot-${pid}-${idx}`);
-            if (ptsInput)  { ptsInput.value  = pts;  updateGrading(pid, idx, 'pts', pts); }
-            if (anotInput) { anotInput.value = anot; updateGrading(pid, idx, 'anotacion', anot); }
-            statusEl.textContent = `✅ IA sugirió ${pts}/${maxPts}`;
+            if (anotInput && !anotInput.value.trim()) {
+                anotInput.value = justif;
+                updateGrading(pid, idx, 'anotacion', justif);
+            }
         } catch(e) {
-            statusEl.textContent = '⚠️ Error al consultar IA. Califica manualmente.';
-            console.error('DeepSeek error:', e);
+            statusEl.textContent = `⚠️ Error: ${e.message}. Verifica la IA seleccionada.`;
+            console.error('AI grading error:', e);
         }
     }
 
@@ -2711,7 +3093,7 @@ Responde SOLO en formato JSON: {"puntaje": <número>, "justificacion": "<texto>"
                 puntaje_obtenido: totalPts,
                 puntaje_posible:  puntajePosibleTotal,
                 calificado_en:    new Date().toISOString()
-            }).eq('id', row.id);
+            }).eq('quiz_session_id', cloudId).eq('participante_codigo', pid);
         });
 
         try {
