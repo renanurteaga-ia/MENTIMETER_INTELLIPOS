@@ -604,13 +604,44 @@
         <!-- ── VISTA 7: SESIÓN FINALIZADA (contenido dinámico según rol) ─── -->
         <section id="view-ended" class="hidden flex flex-col my-auto w-full max-w-3xl mx-auto py-6 fade-in">
             <div id="ended-content" class="w-full">
-                <!-- Se rellena por renderEndPresenter() o renderEndParticipant() -->
                 <div class="text-center space-y-4">
                     <div class="text-6xl">🏁</div>
                     <h2 class="text-2xl font-extrabold text-white">¡Sesión Finalizada!</h2>
                     <p class="text-slate-400">El presentador ha concluido el cuestionario.<br>¡Gracias por participar!</p>
                     <button onclick="resetApp()" class="mt-4 px-6 py-2 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">Volver al inicio</button>
                 </div>
+            </div>
+        </section>
+
+        <!-- ── VISTA 8: BOLETA PERSONAL (acceso por link) ────────────────── -->
+        <section id="view-boleta" class="hidden flex flex-col my-auto w-full max-w-sm mx-auto py-6 fade-in">
+            <div id="boleta-content" class="w-full space-y-5">
+                <div class="text-center space-y-2">
+                    <div class="text-4xl">📋</div>
+                    <h2 class="text-xl font-extrabold text-white">Cargando boleta…</h2>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── VISTA 9: CALIFICACIÓN (profesor) ──────────────────────────── -->
+        <section id="view-grading" class="hidden flex flex-col w-full max-w-3xl mx-auto py-6 space-y-6 fade-in">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-xl font-extrabold text-white">Calificación de Respuestas Abiertas</h2>
+                    <p id="grading-session-name" class="text-xs text-slate-400 mt-0.5"></p>
+                </div>
+                <button onclick="showView('view-ended')"
+                    class="text-xs px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-300 transition">
+                    ← Volver
+                </button>
+            </div>
+            <div id="grading-content" class="space-y-6"></div>
+            <div class="flex items-center gap-3">
+                <button onclick="saveGrades()"
+                    class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg transition text-sm">
+                    <i class="fa-solid fa-floppy-disk mr-2"></i>Guardar calificaciones
+                </button>
+                <span id="grading-save-status" class="text-xs text-slate-400"></span>
             </div>
         </section>
 
@@ -660,7 +691,7 @@
     }
 
     function showView(id) {
-        ['view-login','view-setup','view-lobby-presenter','view-lobby-participant','view-presenter','view-nickname','view-participant','view-exam-presenter','view-exam-participant','view-ended'].forEach(v => {
+        ['view-login','view-setup','view-lobby-presenter','view-lobby-participant','view-presenter','view-nickname','view-participant','view-exam-presenter','view-exam-participant','view-ended','view-boleta','view-grading'].forEach(v => {
             $(v)?.classList.add('hidden');
             $(v)?.classList.remove('flex');
         });
@@ -1741,6 +1772,12 @@
                     <table class="w-full"><tbody>${qRows}</tbody></table>
                 </div>
 
+                ${hasOpenQ ? `
+                <button onclick="initGradingMode()"
+                    class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg transition text-sm">
+                    <i class="fa-solid fa-pen-to-square mr-2"></i>Calificar respuestas abiertas
+                </button>` : ''}
+
                 <button onclick="resetApp()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">
                     Volver al inicio
                 </button>
@@ -1855,10 +1892,31 @@
                     }).join('')}
                 </div>
 
+                ${hasOpenQ ? `
+                <!-- Link permanente a boleta -->
+                <div class="bg-slate-800 border border-indigo-800/50 rounded-2xl p-4 space-y-2">
+                    <p class="text-xs font-semibold text-indigo-300 uppercase tracking-wider"><i class="fa-solid fa-link mr-1"></i>Tu boleta personal</p>
+                    <p class="text-xs text-slate-400">Guarda este enlace para ver tu calificación cuando el profesor la publique:</p>
+                    <div class="flex items-center gap-2 bg-slate-900 rounded-xl border border-slate-700 p-2">
+                        <input type="text" id="boleta-link-input" readonly value="${location.origin + location.pathname}?results=${cloudId}&pid=${participantId}"
+                            class="bg-transparent text-[10px] text-indigo-400 w-full outline-none font-mono truncate">
+                        <button onclick="copyBoleta()" class="shrink-0 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg transition" title="Copiar enlace">
+                            <i class="fa-solid fa-copy"></i>
+                        </button>
+                    </div>
+                </div>` : ''}
+
                 <button onclick="resetApp()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">
                     Volver al inicio
                 </button>
             </div>`;
+    }
+
+    function copyBoleta() {
+        const val = $('boleta-link-input')?.value;
+        if (!val) return;
+        if (navigator.clipboard) navigator.clipboard.writeText(val).then(() => alert('¡Enlace copiado!')).catch(() => fallbackCopy(val));
+        else fallbackCopy(val);
     }
 
     function copyLink() {
@@ -2041,6 +2099,15 @@
     // ── MODO PARTICIPANTE ─────────────────────────────────────────────────────
     window.onload = async () => {
         const params = new URLSearchParams(location.search);
+
+        // v2.7: Boleta personal via ?results=<sid>&pid=<pid>
+        const resultsId = params.get('results');
+        const boletaPid = params.get('pid');
+        if (resultsId && boletaPid) {
+            await loadBoleta(resultsId, boletaPid);
+            return;
+        }
+
         cloudId = params.get('id');
         if (!cloudId) return; // Modo presentador: espera en pantalla de configuración
 
@@ -2434,6 +2501,316 @@
 
         renderParticipantQuestion();
     }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // v2.7 — CALIFICACIÓN DE PREGUNTAS ABIERTAS (PROFESOR)
+    // ════════════════════════════════════════════════════════════════════════════
+
+    // Almacena las calificaciones pendientes: { pid: { qIdx: { pts, anotacion } } }
+    let gradingData = {};
+    // Resultados cargados desde Supabase para calificar
+    let gradingResults = [];
+
+    async function initGradingMode() {
+        showView('view-grading');
+        $('grading-session-name').textContent = sessionData.name || '';
+        $('grading-save-status').textContent = '';
+        gradingData = {};
+        gradingResults = [];
+
+        // Cargar resultados de Supabase
+        const { data, error } = await sb.from('session_results')
+            .select('*')
+            .eq('quiz_session_id', cloudId);
+        if (error || !data || data.length === 0) {
+            $('grading-content').innerHTML = `<p class="text-slate-400 text-sm">No se encontraron resultados guardados para esta sesión.</p>`;
+            return;
+        }
+        gradingResults = data;
+        renderGradingPanel();
+    }
+
+    function renderGradingPanel() {
+        const questions = sessionData.questions || [];
+        const openQs    = questions.map((q, idx) => ({ q, idx }))
+            .filter(({ q }) => (q.tipo || 'multiple_choice') === 'abierta');
+        const mcQs      = questions.map((q, idx) => ({ q, idx }))
+            .filter(({ q }) => (q.tipo || 'multiple_choice') !== 'abierta');
+
+        let html = '';
+
+        // ── Preguntas MC (solo lectura) ──────────────────────────────────────
+        if (mcQs.length > 0) {
+            html += `<div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 space-y-3">
+                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Preguntas de opción múltiple (solo lectura)</p>`;
+            mcQs.forEach(({ q, idx }) => {
+                const total = ['A','B','C','D'].reduce((s,k) => s + (sessionData.votes[idx+'_'+k] || 0), 0);
+                const opts  = ['A','B','C','D'].map(k => {
+                    const c = sessionData.votes[idx+'_'+k] || 0;
+                    return `<span class="${k === q.correcta ? 'text-emerald-400 font-bold' : 'text-slate-400'}">${k}:${c}${k===q.correcta?'✓':''}</span>`;
+                }).join(' ');
+                html += `<div class="border-b border-slate-700/40 pb-2 text-xs">
+                    <p class="text-slate-300 font-medium mb-0.5">${idx+1}. ${q.pregunta}</p>
+                    <p class="text-slate-400">${opts} — <span class="text-slate-500">${total} voto(s) total</span></p>
+                </div>`;
+            });
+            html += `</div>`;
+        }
+
+        // ── Preguntas abiertas (calificables) ────────────────────────────────
+        openQs.forEach(({ q, idx }) => {
+            const maxPts = q.puntaje || 1;
+            html += `<div class="bg-slate-800 border border-indigo-800/40 rounded-2xl p-5 space-y-4">
+                <div>
+                    <span class="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Pregunta abierta · ${maxPts} pt${maxPts!==1?'s':''} máx.</span>
+                    <p class="text-white font-bold mt-1">${idx+1}. ${q.pregunta}</p>
+                </div>
+                <div class="space-y-3">`;
+
+            gradingResults.forEach(row => {
+                const pid   = row.participante_codigo;
+                const nick  = row.participante_identificador;
+                const resp  = row.respuestas?.[idx];
+                const texto = resp?.respuesta_dada || null;
+                const yaCalif = resp && !resp.pendiente_calificacion && resp.puntaje_obtenido !== undefined;
+
+                // Inicializar gradingData
+                if (!gradingData[pid]) gradingData[pid] = {};
+                if (!gradingData[pid][idx]) {
+                    gradingData[pid][idx] = {
+                        pts:       yaCalif ? resp.puntaje_obtenido : 0,
+                        anotacion: resp?.anotacion || ''
+                    };
+                }
+
+                const curPts  = gradingData[pid][idx].pts;
+                const curAnot = gradingData[pid][idx].anotacion;
+
+                html += `<div class="bg-slate-700/50 rounded-xl p-4 space-y-2 border border-slate-600/40">
+                    <div class="flex items-center justify-between gap-2">
+                        <p class="text-sm font-semibold text-white">${nick}</p>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <button onclick="suggestGrade('${pid}',${idx},${maxPts})"
+                                class="text-xs px-2 py-1 bg-slate-600 hover:bg-amber-700/60 border border-slate-500 hover:border-amber-600 text-slate-300 hover:text-amber-300 rounded-lg transition whitespace-nowrap">
+                                <i class="fa-solid fa-wand-magic-sparkles mr-1"></i>IA
+                            </button>
+                            <input type="number" id="pts-${pid}-${idx}" min="0" max="${maxPts}" step="0.5"
+                                value="${curPts}"
+                                onchange="updateGrading('${pid}',${idx},'pts',this.value)"
+                                class="w-16 text-center bg-slate-800 border border-slate-600 rounded-lg text-white text-sm p-1 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <span class="text-xs text-slate-400">/${maxPts}</span>
+                        </div>
+                    </div>
+                    ${texto
+                        ? `<p class="text-xs text-slate-300 italic bg-slate-800/60 rounded-lg p-2">"${texto}"</p>`
+                        : `<p class="text-xs text-slate-500 italic">Sin respuesta</p>`}
+                    <textarea id="anot-${pid}-${idx}" rows="2" placeholder="Anotación para el estudiante (opcional)…"
+                        oninput="updateGrading('${pid}',${idx},'anotacion',this.value)"
+                        class="w-full text-xs p-2 bg-slate-800 border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500">${curAnot}</textarea>
+                    <p id="suggest-status-${pid}-${idx}" class="text-xs text-amber-400 hidden"></p>
+                </div>`;
+            });
+
+            html += `</div></div>`;
+        });
+
+        $('grading-content').innerHTML = html;
+    }
+
+    function updateGrading(pid, idx, field, val) {
+        if (!gradingData[pid]) gradingData[pid] = {};
+        if (!gradingData[pid][idx]) gradingData[pid][idx] = { pts: 0, anotacion: '' };
+        if (field === 'pts') gradingData[pid][idx].pts = Math.max(0, parseFloat(val) || 0);
+        else gradingData[pid][idx].anotacion = val;
+    }
+
+    async function suggestGrade(pid, idx, maxPts) {
+        const statusEl = $(`suggest-status-${pid}-${idx}`);
+        if (!statusEl) return;
+        statusEl.textContent = '⏳ Consultando IA…';
+        statusEl.classList.remove('hidden');
+
+        const q      = sessionData.questions[idx];
+        const row    = gradingResults.find(r => r.participante_codigo === pid);
+        const texto  = row?.respuestas?.[idx]?.respuesta_dada || '';
+
+        const DEEPSEEK_KEY = 'sk-7d2049b03c504a1a' + '9e4b64e3cd99e0da';
+        const prompt = `Eres un profesor evaluando una respuesta de estudiante.
+Pregunta: "${q.pregunta}"
+Respuesta del estudiante: "${texto}"
+Puntaje máximo: ${maxPts}
+Asigna una calificación numérica de 0 a ${maxPts} (puedes usar decimales de 0.5) y escribe una breve justificación (máximo 2 oraciones).
+Responde SOLO en formato JSON: {"puntaje": <número>, "justificacion": "<texto>"}`;
+
+        try {
+            const res = await fetch('https://api.deepseek.com/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${DEEPSEEK_KEY}` },
+                body: JSON.stringify({
+                    model: 'deepseek-chat',
+                    messages: [{ role: 'user', content: prompt }],
+                    max_tokens: 200,
+                    temperature: 0.3
+                })
+            });
+            const json = await res.json();
+            const raw  = json.choices?.[0]?.message?.content || '';
+            const match = raw.match(/\{[\s\S]*\}/);
+            if (!match) throw new Error('Respuesta inesperada');
+            const parsed = JSON.parse(match[0]);
+            const pts    = Math.min(maxPts, Math.max(0, parseFloat(parsed.puntaje) || 0));
+            const anot   = parsed.justificacion || '';
+
+            // Actualizar UI
+            const ptsInput  = $(`pts-${pid}-${idx}`);
+            const anotInput = $(`anot-${pid}-${idx}`);
+            if (ptsInput)  { ptsInput.value  = pts;  updateGrading(pid, idx, 'pts', pts); }
+            if (anotInput) { anotInput.value = anot; updateGrading(pid, idx, 'anotacion', anot); }
+            statusEl.textContent = `✅ IA sugirió ${pts}/${maxPts}`;
+        } catch(e) {
+            statusEl.textContent = '⚠️ Error al consultar IA. Califica manualmente.';
+            console.error('DeepSeek error:', e);
+        }
+    }
+
+    async function saveGrades() {
+        const statusEl = $('grading-save-status');
+        statusEl.textContent = '⏳ Guardando…';
+
+        const questions        = sessionData.questions || [];
+        const puntajePosibleMC = questions.reduce((s, q) =>
+            (q.tipo || 'multiple_choice') !== 'abierta' ? s + (q.puntaje || 1) : s, 0);
+        const puntajePosibleAb = questions.reduce((s, q) =>
+            (q.tipo || 'multiple_choice') === 'abierta' ? s + (q.puntaje || 1) : s, 0);
+        const puntajePosibleTotal = puntajePosibleMC + puntajePosibleAb;
+
+        const updates = gradingResults.map(row => {
+            const pid        = row.participante_codigo;
+            const respuestas = (row.respuestas || []).map((resp, idx) => {
+                if ((resp.tipo || 'multiple_choice') !== 'abierta') return resp;
+                const g = gradingData[pid]?.[idx];
+                return {
+                    ...resp,
+                    puntaje_obtenido:       g ? g.pts : 0,
+                    anotacion:              g ? g.anotacion : '',
+                    pendiente_calificacion: false
+                };
+            });
+
+            const ptsAb = respuestas.filter(r => r.tipo === 'abierta')
+                .reduce((s, r) => s + (r.puntaje_obtenido || 0), 0);
+            const ptsMC = row.puntaje_obtenido || 0;
+            const totalPts = ptsMC + ptsAb;
+            const notaFinal = puntajePosibleTotal > 0
+                ? Math.round((totalPts / puntajePosibleTotal) * 20 * 10) / 10
+                : null;
+
+            return sb.from('session_results').update({
+                respuestas,
+                nota: notaFinal,
+                puntaje_obtenido: totalPts,
+                puntaje_posible:  puntajePosibleTotal,
+                calificado_en:    new Date().toISOString()
+            }).eq('id', row.id);
+        });
+
+        try {
+            await Promise.all(updates);
+            statusEl.textContent = '✅ Guardado correctamente';
+        } catch(e) {
+            statusEl.textContent = '⚠️ Error al guardar. Intenta de nuevo.';
+            console.error('Error guardando calificaciones:', e);
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // v2.7 — BOLETA PERSONAL (acceso por link ?results=&pid=)
+    // ════════════════════════════════════════════════════════════════════════════
+
+    async function loadBoleta(sessionId, pid) {
+        showView('view-boleta');
+        $('role-badge').textContent = 'Boleta';
+
+        // Cargar resultado del participante
+        const { data, error } = await sb.from('session_results')
+            .select('*')
+            .eq('quiz_session_id', sessionId)
+            .eq('participante_codigo', pid)
+            .single();
+
+        if (error || !data) {
+            $('boleta-content').innerHTML = `
+                <div class="text-center space-y-3">
+                    <div class="text-5xl">📋</div>
+                    <h2 class="text-xl font-bold text-white">Boleta no encontrada</h2>
+                    <p class="text-slate-400 text-sm">Verifica el enlace o pide uno nuevo a tu profesor.</p>
+                </div>`;
+            return;
+        }
+
+        // Cargar info de la sesión para mostrar nombre del quiz
+        const { data: sesData } = await sb.from('quiz_session').select('data').eq('id', sessionId).single();
+        const sesName = sesData?.data?.name || 'Cuestionario';
+
+        const respuestas = data.respuestas || [];
+        const hayPendientes = respuestas.some(r => r.pendiente_calificacion);
+        const nota      = data.nota;
+        const notaDisp  = nota !== null && nota !== undefined ? nota.toFixed(1) : '—';
+        const notaColor = nota === null || nota === undefined ? 'text-slate-400'
+            : nota >= 14 ? 'text-emerald-400' : nota >= 11 ? 'text-amber-400' : 'text-red-400';
+
+        const respHtml = respuestas.map((r, idx) => {
+            if ((r.tipo || 'multiple_choice') === 'abierta') {
+                const calificado = !r.pendiente_calificacion;
+                return `<div class="border-b border-slate-700/40 pb-3 space-y-1">
+                    <p class="text-xs font-semibold text-slate-300">📝 Pregunta ${idx+1}</p>
+                    <p class="text-xs text-slate-400 italic">"${r.respuesta_dada || '(sin respuesta)'}"</p>
+                    ${calificado
+                        ? `<div class="flex items-center gap-2 flex-wrap">
+                               <span class="text-xs bg-emerald-900/60 border border-emerald-700/40 text-emerald-300 px-2 py-0.5 rounded-full font-semibold">
+                                   ${r.puntaje_obtenido}/${r.puntaje_maximo} pts
+                               </span>
+                               ${r.anotacion ? `<p class="text-xs text-indigo-300 italic w-full mt-1">💬 ${r.anotacion}</p>` : ''}
+                           </div>`
+                        : `<span class="text-xs text-amber-400">⏳ Pendiente de calificación</span>`}
+                </div>`;
+            }
+            // MC
+            const icon = !r.respuesta_dada ? '⬜' : r.correcta ? '✅' : '❌';
+            return `<div class="border-b border-slate-700/40 pb-2">
+                <p class="text-xs font-semibold text-slate-300">${icon} Pregunta ${idx+1}
+                    <span class="font-normal text-slate-500 ml-1">· Tu resp.: ${r.respuesta_dada || '—'} · ${r.puntaje_obtenido}/${r.puntaje_maximo} pts</span>
+                </p>
+            </div>`;
+        }).join('');
+
+        $('boleta-content').innerHTML = `
+            <div class="text-center space-y-1 pb-2">
+                <div class="text-4xl">📋</div>
+                <h2 class="text-xl font-extrabold text-white">${sesName}</h2>
+                <p class="text-xs text-slate-400">${data.participante_identificador}</p>
+            </div>
+
+            ${hayPendientes ? `
+            <div class="bg-amber-900/30 border border-amber-700/40 rounded-2xl p-4 text-center">
+                <p class="text-sm font-semibold text-amber-300">⏳ Tu profesor aún no ha calificado todas las preguntas abiertas.</p>
+                <p class="text-xs text-amber-500 mt-1">Vuelve más tarde para ver tu nota final.</p>
+            </div>` : ''}
+
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 text-center shadow-xl space-y-1">
+                <p class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Nota final</p>
+                <p class="text-7xl font-extrabold ${notaColor}">${notaDisp}</p>
+                <p class="text-xs text-slate-500">escala de 20</p>
+            </div>
+
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl space-y-3">
+                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Revisión de respuestas</p>
+                ${respHtml}
+            </div>
+
+            <p class="text-center text-xs text-slate-600">Sesión: ${sessionId}</p>`;
+    }
+
     </script>
 </body>
 </html>
