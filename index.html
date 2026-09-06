@@ -627,6 +627,10 @@
                     <h2 class="text-xl font-extrabold text-white">Cargando boleta…</h2>
                 </div>
             </div>
+            <button id="btn-refresh-boleta" onclick="refreshBoleta()"
+                class="hidden mt-4 w-full py-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-xl text-sm text-slate-300 transition">
+                <i class="fa-solid fa-rotate-right mr-2"></i>Actualizar boleta
+            </button>
         </section>
 
         <!-- ── VISTA 9: CALIFICACIÓN (profesor) ──────────────────────────── -->
@@ -822,6 +826,10 @@
     }
 
     async function onAuthSuccess(email) {
+        // Si la URL es una boleta personal (?results=&pid=), no redirigir al setup
+        const _p = new URLSearchParams(location.search);
+        if (_p.get('results') && _p.get('pid')) return;
+
         try {
             const { data } = await sb.from('authorized_users').select('activo, nombre').eq('email', email).single();
             if (!data || !data.activo) {
@@ -3097,10 +3105,20 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
         });
 
         try {
-            await Promise.all(updates);
-            statusEl.textContent = '✅ Guardado correctamente';
+            const results = await Promise.all(updates);
+            const failures = results.filter(r => r && r.error);
+            if (failures.length > 0) {
+                const msg = failures[0].error?.message || 'Sin permisos de escritura';
+                console.error('Errores al guardar calificaciones:', failures.map(r => r.error));
+                statusEl.textContent = `⚠️ Error al guardar: ${msg}`;
+                statusEl.style.color = '#f87171';
+            } else {
+                statusEl.textContent = '✅ Calificaciones guardadas correctamente';
+                statusEl.style.color = '';
+            }
         } catch(e) {
-            statusEl.textContent = '⚠️ Error al guardar. Intenta de nuevo.';
+            statusEl.textContent = '⚠️ Error inesperado al guardar. Revisa la consola.';
+            statusEl.style.color = '#f87171';
             console.error('Error guardando calificaciones:', e);
         }
     }
@@ -3109,9 +3127,21 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
     // v2.7 — BOLETA PERSONAL (acceso por link ?results=&pid=)
     // ════════════════════════════════════════════════════════════════════════════
 
+    // Ids stored for refresh
+    let _boletaSessionId = null;
+    let _boletaPid       = null;
+
+    function refreshBoleta() {
+        if (_boletaSessionId && _boletaPid) loadBoleta(_boletaSessionId, _boletaPid);
+    }
+
     async function loadBoleta(sessionId, pid) {
+        _boletaSessionId = sessionId;
+        _boletaPid       = pid;
         showView('view-boleta');
         $('role-badge').textContent = 'Boleta';
+        const refreshBtn = $('btn-refresh-boleta');
+        if (refreshBtn) refreshBtn.classList.remove('hidden');
 
         // Cargar resultado del participante
         const { data, error } = await sb.from('session_results')
