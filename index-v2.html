@@ -124,7 +124,7 @@
                         class="flex-1 bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
                         <option value="">— Selecciona un cuestionario guardado —</option>
                     </select>
-                    <button onclick="loadFromLibrary()"
+                    <button id="btn-usar-quiz" onclick="loadFromLibrary()"
                         class="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-xl transition flex items-center gap-2">
                         <i class="fa-solid fa-check"></i> Usar
                     </button>
@@ -150,7 +150,7 @@
                         class="flex-1 bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 transition">
                         <option value="">— Sin lista (acceso abierto por nickname) —</option>
                     </select>
-                    <button onclick="loadFromListLibrary()"
+                    <button id="btn-usar-lista" onclick="loadFromListLibrary()"
                         class="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-bold rounded-xl transition flex items-center gap-2">
                         <i class="fa-solid fa-check"></i> Usar
                     </button>
@@ -634,6 +634,7 @@
     let isPresenter     = false;
     let lastRenderedIdx = -1;    // Para detectar cambio de pregunta en participante
     let selectedParticipantList = null;  // lista cargada {id, nombre, lista:[]}
+    let selectedQuizId = null;           // UUID del cuestionario seleccionado de la biblioteca
 
     // ── UTILIDADES ────────────────────────────────────────────────────────────
     const $ = id => document.getElementById(id);
@@ -816,7 +817,6 @@
         const sel = $('list-select');
         const opt = sel.options[sel.selectedIndex];
         if (!opt || !opt.value) {
-            // Deseleccionar lista
             clearListSelection();
             return;
         }
@@ -828,12 +828,20 @@
         $('list-loaded-name').textContent = opt.dataset.nombre;
         $('list-loaded-count').textContent = selectedParticipantList.lista.length;
         $('list-loaded-msg').classList.remove('hidden');
+        // Cambiar botón a estado "cargado"
+        const btn = $('btn-usar-lista');
+        btn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Cargada';
+        btn.className = 'px-4 py-2.5 bg-slate-600 text-slate-300 text-sm font-bold rounded-xl flex items-center gap-2 cursor-default';
     }
 
     function clearListSelection() {
         selectedParticipantList = null;
         $('list-select').value = '';
         $('list-loaded-msg').classList.add('hidden');
+        // Restaurar botón
+        const btn = $('btn-usar-lista');
+        btn.innerHTML = '<i class="fa-solid fa-check"></i> Usar';
+        btn.className = 'px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-bold rounded-xl transition flex items-center gap-2';
     }
 
     function loadFromLibrary() {
@@ -841,9 +849,14 @@
         const opt = sel.options[sel.selectedIndex];
         if (!opt || !opt.value) { alert('Selecciona un cuestionario de la lista.'); return; }
         parsedQuestions = JSON.parse(opt.dataset.preguntas);
+        selectedQuizId = opt.value;
         $('library-loaded-name').textContent = opt.textContent.split('(')[0].trim();
         $('library-loaded-count').textContent = parsedQuestions.length;
         $('library-loaded-msg').classList.remove('hidden');
+        // Cambiar botón a estado "cargado"
+        const btn = $('btn-usar-quiz');
+        btn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Cargado';
+        btn.className = 'px-4 py-2.5 bg-slate-600 text-slate-300 text-sm font-bold rounded-xl flex items-center gap-2 cursor-default';
         // Ocultar textarea y separador, mostrar botón de crear sesión
         $('paste-panel').classList.add('hidden');
         $('image-upload-panel').classList.add('hidden');
@@ -853,8 +866,13 @@
 
     function clearLibrarySelection() {
         parsedQuestions = [];
+        selectedQuizId = null;
         $('library-select').value = '';
         $('library-loaded-msg').classList.add('hidden');
+        // Restaurar botón
+        const btn = $('btn-usar-quiz');
+        btn.innerHTML = '<i class="fa-solid fa-check"></i> Usar';
+        btn.className = 'px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-xl transition flex items-center gap-2';
         $('paste-panel').classList.remove('hidden');
         $('btn-preview-wrap').classList.remove('hidden');
         $('btn-launch-library').classList.add('hidden');
@@ -941,6 +959,8 @@
             mode, timerSeconds, examMinutes, randomOrder, name,
             accessType,
             participantList: selectedParticipantList ? selectedParticipantList.lista : null,
+            quizId: selectedQuizId,
+            participantListId: selectedParticipantList ? selectedParticipantList.id : null,
             questionChangedAt:0, examStartedAt:0
         };
         try {
@@ -977,7 +997,7 @@
         cloudId = genId('s_');
 
         // Estado inicial: 'lobby' — los participantes se registran antes de empezar
-        sessionData = { questions, currentIndex:0, votes:{}, voters:{}, participants:{}, participantVotes:{}, examSubmissions:{}, reveal:false, status:'lobby', mode, timerSeconds, examMinutes, randomOrder, name, accessType, participantList: selectedParticipantList ? selectedParticipantList.lista : null, questionChangedAt:0, examStartedAt:0 };
+        sessionData = { questions, currentIndex:0, votes:{}, voters:{}, participants:{}, participantVotes:{}, examSubmissions:{}, reveal:false, status:'lobby', mode, timerSeconds, examMinutes, randomOrder, name, accessType, participantList: selectedParticipantList ? selectedParticipantList.lista : null, quizId: selectedQuizId, participantListId: selectedParticipantList ? selectedParticipantList.id : null, questionChangedAt:0, examStartedAt:0 };
 
         try {
             const { error } = await sb.from('quiz_session').insert([{ id: cloudId, data: sessionData }]);
@@ -1160,6 +1180,7 @@
     async function endSession() {
         if (!confirm('¿Deseas finalizar la sesión? Los participantes verán sus resultados.')) return;
         sessionData.status = 'ended';
+        await saveSessionResults();
         await push();
         // Limpiar registro de Supabase después de 5 minutos
         setTimeout(async () => {
@@ -1192,6 +1213,68 @@
             ? Math.round(scores.reduce((s, x) => s + x.nota, 0) / scores.length * 10) / 10
             : 0;
         return { scores, avg };
+    }
+
+    // ── GUARDAR RESULTADOS EN SUPABASE ────────────────────────────────────────
+    async function saveSessionResults() {
+        if (!cloudId) return;
+        const questions        = sessionData.questions        || [];
+        const participants     = sessionData.participants     || {};
+        const participantVotes = sessionData.participantVotes || {};
+        const quizId           = sessionData.quizId           || null;
+        const listId           = sessionData.participantListId || null;
+
+        if (Object.keys(participants).length === 0) return;
+
+        // puntaje_posible = suma de puntaje de todas las preguntas
+        const puntajePosible = questions.reduce((s, q) => s + (q.puntaje || 1), 0);
+
+        const rows = Object.entries(participants).map(([pid, nick]) => {
+            const pvotes = participantVotes[pid] || {};
+            let puntajeObtenido = 0;
+
+            const respuestas = questions.map((q, idx) => {
+                const respuestaDada = pvotes[String(idx)] || null;
+                const esCorrecta    = respuestaDada !== null && respuestaDada === q.correcta;
+                const puntajeQ      = q.puntaje || 1;
+                const pts           = esCorrecta ? puntajeQ : 0;
+                puntajeObtenido    += pts;
+                return {
+                    question_id:      q.id   || null,
+                    tipo:             q.tipo  || 'multiple_choice',
+                    respuesta_dada:   respuestaDada,
+                    correcta:         esCorrecta,
+                    puntaje_obtenido: pts,
+                    puntaje_maximo:   puntajeQ
+                };
+            });
+
+            const nota = puntajePosible > 0
+                ? Math.round((puntajeObtenido / puntajePosible) * 20 * 10) / 10
+                : 0;
+
+            return {
+                quiz_session_id:            cloudId,
+                quiz_id:                    quizId,
+                participant_list_id:        listId,
+                alcance:                    sessionData.alcance      || 'sesion',
+                sesion_numero:              sessionData.sesionNumero || null,
+                participante_codigo:        pid,
+                participante_identificador: nick,
+                respuestas,
+                puntaje_obtenido:           puntajeObtenido,
+                puntaje_posible:            puntajePosible,
+                nota,
+                completado_en:              new Date().toISOString()
+            };
+        });
+
+        try {
+            const { error } = await sb.from('session_results').insert(rows);
+            if (error) console.error('Error guardando resultados de sesión:', error);
+        } catch(e) {
+            console.error('Error guardando resultados de sesión:', e);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -1260,6 +1343,7 @@
     async function endExamEarly() {
         if (sessionData.status === 'ended') return;
         sessionData.status = 'ended';
+        await saveSessionResults();
         await push();
         clearInterval(examTimerInt);
         clearInterval(fallbackInt); fallbackInt = null;
