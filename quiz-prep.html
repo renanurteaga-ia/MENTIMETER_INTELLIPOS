@@ -86,7 +86,12 @@
       <label class="block text-sm font-semibold text-slate-300">
         Preguntas <span class="text-slate-500 font-normal">(pega desde Google Sheets)</span>
       </label>
-      <p class="text-xs text-slate-500">Columnas: Pregunta · Opción A · B · C · D · Correcta · (URL imagen opcional)</p>
+      <p class="text-xs text-slate-500">
+        Columnas: Pregunta · Opción A · B · C · D · Correcta · (URL imagen opcional) · (Puntaje opcional)<br>
+        Para una <span class="text-amber-400 font-semibold">pregunta abierta</span>, pon
+        <span class="font-mono text-amber-400">ABIERTA</span> en la columna Correcta (las opciones se ignoran).<br>
+        El <span class="text-indigo-300 font-semibold">Puntaje</span> (columna 8) es opcional — si se omite, vale <span class="font-mono text-indigo-300">1</span> punto.
+      </p>
       <textarea id="sheet-input" rows="8"
         placeholder="Pega aquí el contenido copiado de Google Sheets…"
         class="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm font-mono"></textarea>
@@ -158,18 +163,38 @@ function parseSheetText(raw) {
   const result = [];
   for (const line of lines) {
     const cols = line.split('\t');
-    if (cols.length < 6) continue;
+    if (cols.length < 1) continue;
     const first = cols[0].trim().toLowerCase();
     if (first === 'pregunta' || first === 'question') continue;
-    result.push({
-      pregunta: cols[0].trim(),
-      opcionA: (cols[1]||'').trim(),
-      opcionB: (cols[2]||'').trim(),
-      opcionC: (cols[3]||'').trim(),
-      opcionD: (cols[4]||'').trim(),
-      correcta: ((cols[5]||'A').trim().toUpperCase().charAt(0)),
-      imageUrl: (cols[6]||'').trim()
-    });
+
+    const tipoRaw    = (cols[5] || '').trim().toUpperCase();
+    const puntajeRaw = parseFloat((cols[7] || '').trim());
+    const puntaje    = (!isNaN(puntajeRaw) && puntajeRaw > 0) ? puntajeRaw : 1;
+
+    if (tipoRaw === 'ABIERTA') {
+      // Pregunta de texto libre — no necesita opciones
+      result.push({
+        pregunta: cols[0].trim(),
+        opcionA: '', opcionB: '', opcionC: '', opcionD: '',
+        correcta: '',
+        tipo:     'abierta',
+        imageUrl: (cols[6] || '').trim(),
+        puntaje
+      });
+    } else {
+      if (cols.length < 6) continue;
+      result.push({
+        pregunta: cols[0].trim(),
+        opcionA:  (cols[1]||'').trim(),
+        opcionB:  (cols[2]||'').trim(),
+        opcionC:  (cols[3]||'').trim(),
+        opcionD:  (cols[4]||'').trim(),
+        correcta: (cols[5]||'A').trim().toUpperCase().charAt(0),
+        tipo:     'multiple_choice',
+        imageUrl: (cols[6]||'').trim(),
+        puntaje
+      });
+    }
   }
   return result;
 }
@@ -208,7 +233,9 @@ function showCreateView(quiz = null) {
     $('image-panel').classList.remove('hidden');
     // populate textarea for reference
     const tsv = parsedQuestions.map(q =>
-      [q.pregunta, q.opcionA, q.opcionB, q.opcionC, q.opcionD, q.correcta, q.imageUrl||''].join('\t')
+      q.tipo === 'abierta'
+        ? [q.pregunta, '', '', '', '', 'ABIERTA', q.imageUrl||'', q.puntaje||1].join('\t')
+        : [q.pregunta, q.opcionA, q.opcionB, q.opcionC, q.opcionD, q.correcta, q.imageUrl||'', q.puntaje||1].join('\t')
     ).join('\n');
     $('sheet-input').value = tsv;
   }
@@ -288,9 +315,24 @@ function renderImageList() {
   const withImg = parsedQuestions.filter(q => q.imageUrl).length;
   $('img-count').textContent = `${parsedQuestions.length} preguntas · ${withImg} con imagen`;
 
-  $('image-list').innerHTML = parsedQuestions.map((q, i) => `
-    <div class="bg-slate-900 rounded-xl p-3 space-y-2 border border-slate-700/40">
-      <p class="text-sm font-semibold text-white leading-snug">${i + 1}. ${q.pregunta}</p>
+  $('image-list').innerHTML = parsedQuestions.map((q, i) => {
+    const esAbierta = q.tipo === 'abierta';
+    return `
+    <div class="bg-slate-900 rounded-xl p-3 space-y-2 border ${esAbierta ? 'border-amber-700/40' : 'border-slate-700/40'}">
+      <div class="flex items-center gap-2">
+        <p class="text-sm font-semibold text-white leading-snug flex-1">${i + 1}. ${q.pregunta}</p>
+        ${esAbierta
+          ? `<span class="shrink-0 text-xs px-2 py-0.5 rounded-full bg-amber-900/50 border border-amber-700/60 text-amber-300 font-semibold">
+               <i class="fa-solid fa-pen-to-square mr-1"></i>Abierta
+             </span>`
+          : `<span class="shrink-0 text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 border border-indigo-700/40 text-indigo-300">
+               ✓ ${q.correcta}
+             </span>`
+        }
+        <span class="shrink-0 text-xs px-2 py-0.5 rounded-full bg-slate-700 border border-slate-600 text-slate-300 font-semibold">
+          ${q.puntaje || 1} pt${(q.puntaje || 1) !== 1 ? 's' : ''}
+        </span>
+      </div>
       <div class="flex items-center gap-3 flex-wrap">
         ${q.imageUrl
           ? `<img src="${q.imageUrl}" class="img-thumb" onerror="this.parentElement.querySelector('.img-ok').classList.add('hidden');this.style.display='none'">
@@ -306,8 +348,8 @@ function renderImageList() {
           <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden" onchange="handleUpload(event,${i})">
         </label>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 function removeImage(idx) {

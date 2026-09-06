@@ -487,7 +487,10 @@
         <section id="view-participant" class="hidden flex flex-col my-auto max-w-md mx-auto w-full space-y-4 fade-in">
             <div class="flex items-center justify-between">
                 <span id="participant-counter" class="text-xs font-bold bg-slate-800 px-3 py-1 rounded-full text-indigo-300 border border-slate-700">Pregunta --</span>
-                <span id="nickname-badge" class="text-xs bg-slate-800 px-3 py-1 rounded-full text-slate-300 border border-slate-700"></span>
+                <div class="flex items-center gap-2">
+                    <span id="participant-points-badge" class="text-xs bg-slate-800 px-3 py-1 rounded-full text-slate-300 border border-slate-700 hidden">1 pt</span>
+                    <span id="nickname-badge" class="text-xs bg-slate-800 px-3 py-1 rounded-full text-slate-300 border border-slate-700"></span>
+                </div>
             </div>
 
             <!-- Barra de tiempo (participante) -->
@@ -567,7 +570,10 @@
 
             <!-- Pregunta actual -->
             <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl space-y-4">
-                <p id="exam-question-num" class="text-xs text-indigo-400 font-semibold uppercase tracking-wider">Pregunta --</p>
+                <div class="flex items-center justify-between">
+                    <p id="exam-question-num" class="text-xs text-indigo-400 font-semibold uppercase tracking-wider">Pregunta --</p>
+                    <span id="exam-points-badge" class="text-xs px-2 py-0.5 rounded-full bg-slate-700 border border-slate-600 text-slate-300 font-semibold">1 pt</span>
+                </div>
                 <p id="exam-question-text" class="text-lg font-bold text-white leading-snug">Cargando…</p>
                 <div id="exam-question-image" class="hidden">
                     <img id="exam-q-img" src="" alt="Imagen de la pregunta"
@@ -1431,6 +1437,10 @@
         $('exam-progress-label').textContent  = `Pregunta ${examPos + 1} / ${totalQ}`;
         $('exam-question-num').textContent    = `Pregunta ${examPos + 1} de ${totalQ}`;
         $('exam-question-text').textContent   = q.pregunta;
+        // Badge de puntaje
+        const puntaje = q.puntaje || 1;
+        const examPtsBadge = $('exam-points-badge');
+        if (examPtsBadge) examPtsBadge.textContent = `${puntaje} pt${puntaje !== 1 ? 's' : ''}`;
         // Imagen de la pregunta (examen participante)
         const eqImgWrap = $('exam-question-image');
         const eqImg = $('exam-q-img');
@@ -2187,6 +2197,14 @@
 
         $('participant-counter').textContent = `Pregunta ${sessionData.currentIndex + 1} / ${sessionData.questions.length}`;
         $('mobile-question-text').textContent = q.pregunta;
+        // Badge de puntaje (solo visible si hay puntajes distintos a 1 en el quiz)
+        const pBadge = $('participant-points-badge');
+        const puntajeQ = q.puntaje || 1;
+        const hayVariedadPuntajes = sessionData.questions.some(x => (x.puntaje || 1) !== 1);
+        if (pBadge) {
+            pBadge.textContent = `${puntajeQ} pt${puntajeQ !== 1 ? 's' : ''}`;
+            pBadge.classList.toggle('hidden', !hayVariedadPuntajes);
+        }
         // Imagen de la pregunta (quiz participante)
         const mqImgWrap = $('mobile-question-image');
         const mqImg = $('participant-q-img');
