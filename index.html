@@ -767,7 +767,22 @@
             let cols = lines[i].split('\t');
             if (cols.length < 2) cols = lines[i].split(',');
             cols = cols.map(c => c.trim().replace(/^["']|["']$/g, ''));
-            if (cols.length >= 5) {
+            if (cols.length < 1 || !cols[0]) continue;
+
+            const tipoRaw    = (cols[5] || '').trim().toUpperCase();
+            const puntajeRaw = parseFloat((cols[7] || '').trim());
+            const puntaje    = (!isNaN(puntajeRaw) && puntajeRaw > 0) ? puntajeRaw : 1;
+
+            if (tipoRaw === 'ABIERTA') {
+                parsed.push({
+                    pregunta: cols[0],
+                    opcionA: '', opcionB: '', opcionC: '', opcionD: '',
+                    correcta: null,
+                    tipo: 'abierta',
+                    imageUrl: convertGDriveUrl(cols[6] || ''),
+                    puntaje
+                });
+            } else if (cols.length >= 5) {
                 parsed.push({
                     pregunta: cols[0],
                     opcionA: cols[1] || '',
@@ -775,7 +790,9 @@
                     opcionC: cols[3] || '',
                     opcionD: cols[4] || '',
                     correcta: (cols[5] || 'A').toUpperCase().charAt(0),
-                    imageUrl: convertGDriveUrl(cols[6] || '')
+                    tipo: 'multiple_choice',
+                    imageUrl: convertGDriveUrl(cols[6] || ''),
+                    puntaje
                 });
             }
         }
@@ -1702,9 +1719,7 @@
     function renderEndParticipant() {
         showView('view-ended');
         const { scores, avg } = calculateScores();
-        const myScore  = scores.find(s => s.pid === participantId);
-        const bestNota = scores.length > 0 ? scores[0].nota : 0;
-
+        const myScore   = scores.find(s => s.pid === participantId);
         const hasOpenQ  = sessionData.questions.some(q => (q.tipo || 'multiple_choice') === 'abierta');
         const bestScore = scores.find(s => s.nota !== null);
         const bestNota  = bestScore ? bestScore.nota : null;
