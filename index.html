@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
     <style>
@@ -109,10 +110,16 @@
                     <h2 class="text-3xl font-extrabold text-white">Iniciar Cuestionario en Vivo</h2>
                     <p class="text-slate-400 text-sm">Pega las celdas copiadas de Google Sheets: Pregunta · Opción A · B · C · D · Correcta · URL Imagen (opcional)</p>
                 </div>
-                <button onclick="initAiConfig()" title="Gestionar IAs para calificación"
-                    class="ml-4 shrink-0 text-xs px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-indigo-600 rounded-xl text-slate-400 hover:text-indigo-300 transition flex items-center gap-1.5">
-                    <i class="fa-solid fa-robot"></i> IAs
-                </button>
+                <div class="ml-4 shrink-0 flex gap-2">
+                    <button onclick="initBanco()" title="Banco de preguntas"
+                        class="text-xs px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-amber-600 rounded-xl text-slate-400 hover:text-amber-300 transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-book-open"></i> Banco
+                    </button>
+                    <button onclick="initAiConfig()" title="Gestionar IAs para calificación"
+                        class="text-xs px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-indigo-600 rounded-xl text-slate-400 hover:text-indigo-300 transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-robot"></i> IAs
+                    </button>
+                </div>
             </div>
 
             <!-- Selector de biblioteca -->
@@ -240,20 +247,55 @@
                 </div>
 
                 <!-- Opciones para Examen -->
-                <div id="exam-options" class="hidden space-y-3">
+                <div id="exam-options" class="hidden space-y-4">
+                    <!-- Tipo de examen -->
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Tipo de examen</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <label class="flex items-center space-x-2 bg-slate-900 border border-slate-700 rounded-xl p-2.5 cursor-pointer hover:border-amber-500 transition has-[:checked]:border-amber-500 has-[:checked]:bg-amber-950/30">
+                                <input type="radio" name="exam-type" value="parcial" checked onchange="updateBancoHint()" class="accent-amber-500">
+                                <div>
+                                    <span class="text-sm text-white block">📋 Examen Parcial</span>
+                                    <span class="text-xs text-slate-400">Usa preguntas marcadas Parcial</span>
+                                </div>
+                            </label>
+                            <label class="flex items-center space-x-2 bg-slate-900 border border-slate-700 rounded-xl p-2.5 cursor-pointer hover:border-purple-500 transition has-[:checked]:border-purple-500 has-[:checked]:bg-purple-950/30">
+                                <input type="radio" name="exam-type" value="final" onchange="updateBancoHint()" class="accent-purple-500">
+                                <div>
+                                    <span class="text-sm text-white block">🏁 Examen Final</span>
+                                    <span class="text-xs text-slate-400">Usa preguntas marcadas Final</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Duración + Número de preguntas -->
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Duración del examen (minutos)</label>
                             <input type="number" id="exam-minutes" value="30" min="1" max="180"
                                 class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
                         </div>
-                        <div class="flex flex-col justify-end space-y-2">
-                            <label class="flex items-center space-x-2 cursor-pointer">
-                                <input type="checkbox" id="random-order" class="w-4 h-4 accent-indigo-500">
-                                <span class="text-sm text-slate-300">Orden aleatorio de preguntas</span>
-                            </label>
-                            <p class="text-xs text-slate-500">Cada estudiante recibe un orden diferente (anti-copia)</p>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">N° de preguntas en el examen</label>
+                            <input type="number" id="exam-n-preguntas" value="" min="1" placeholder="Todas"
+                                class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition">
                         </div>
+                    </div>
+
+                    <!-- Hint de preselección -->
+                    <div id="banco-hint" class="hidden text-xs text-amber-300 bg-amber-950/40 border border-amber-700/40 rounded-lg px-3 py-2 flex items-start gap-2">
+                        <i class="fa-solid fa-circle-info mt-0.5 shrink-0"></i>
+                        <span id="banco-hint-text"></span>
+                    </div>
+
+                    <!-- Opciones adicionales -->
+                    <div class="flex flex-col space-y-2">
+                        <label class="flex items-center space-x-2 cursor-pointer">
+                            <input type="checkbox" id="random-order" class="w-4 h-4 accent-indigo-500">
+                            <span class="text-sm text-slate-300">Orden aleatorio de preguntas</span>
+                        </label>
+                        <p class="text-xs text-slate-500">Cada estudiante recibe un orden diferente (anti-copia)</p>
                     </div>
                 </div>
 
@@ -674,6 +716,11 @@
                     class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg transition text-sm">
                     <i class="fa-solid fa-floppy-disk mr-2"></i>Guardar calificaciones
                 </button>
+                <button onclick="downloadReportExcel()"
+                    class="px-4 py-3 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg transition text-sm whitespace-nowrap"
+                    title="Descargar reporte Excel">
+                    <i class="fa-solid fa-file-excel"></i>
+                </button>
                 <span id="grading-save-status" class="text-xs text-slate-400"></span>
             </div>
         </section>
@@ -756,6 +803,52 @@
             </div>
         </section>
 
+        <!-- ── VISTA 11: BANCO DE PREGUNTAS ──────────────────────────────── -->
+        <section id="view-banco" class="hidden flex flex-col w-full max-w-3xl mx-auto py-6 space-y-5 fade-in">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-xl font-extrabold text-white">📚 Banco de Preguntas</h2>
+                    <p class="text-xs text-slate-400 mt-0.5">Preselecciona preguntas para el Examen Parcial y el Examen Final</p>
+                </div>
+                <button onclick="showView('view-setup')"
+                    class="text-xs px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-300 transition">
+                    ← Volver
+                </button>
+            </div>
+
+            <!-- Selector de quiz -->
+            <div class="bg-slate-800/60 border border-slate-700 rounded-2xl p-4 space-y-3">
+                <label class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Cuestionario a revisar</label>
+                <div class="flex items-center gap-2">
+                    <select id="banco-quiz-select"
+                        class="flex-1 bg-slate-900 border border-slate-600 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition"
+                        onchange="loadBancoQuiz()">
+                        <option value="">— Selecciona un cuestionario —</option>
+                    </select>
+                </div>
+                <!-- Contadores -->
+                <div id="banco-counters" class="hidden flex gap-4 pt-1">
+                    <span class="text-xs px-3 py-1 rounded-full bg-amber-900/40 border border-amber-700/40 text-amber-300 font-semibold">
+                        <i class="fa-solid fa-p mr-1"></i>Parcial: <span id="cnt-parcial">0</span>
+                    </span>
+                    <span class="text-xs px-3 py-1 rounded-full bg-purple-900/40 border border-purple-700/40 text-purple-300 font-semibold">
+                        <i class="fa-solid fa-f mr-1"></i>Final: <span id="cnt-final">0</span>
+                    </span>
+                    <span class="text-xs px-3 py-1 rounded-full bg-slate-700/60 border border-slate-600 text-slate-400 font-semibold">
+                        Total: <span id="cnt-total">0</span>
+                    </span>
+                    <button onclick="saveBancoMarks()" id="btn-banco-save"
+                        class="ml-auto text-xs px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg transition">
+                        <i class="fa-solid fa-floppy-disk mr-1"></i>Guardar marcas
+                    </button>
+                    <span id="banco-save-status" class="text-xs text-slate-400 self-center"></span>
+                </div>
+            </div>
+
+            <!-- Lista de preguntas -->
+            <div id="banco-content" class="space-y-3"></div>
+        </section>
+
     </main>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
@@ -802,7 +895,7 @@
     }
 
     function showView(id) {
-        ['view-login','view-setup','view-lobby-presenter','view-lobby-participant','view-presenter','view-nickname','view-participant','view-exam-presenter','view-exam-participant','view-ended','view-boleta','view-grading','view-ai-config'].forEach(v => {
+        ['view-login','view-setup','view-lobby-presenter','view-lobby-participant','view-presenter','view-nickname','view-participant','view-exam-presenter','view-exam-participant','view-ended','view-boleta','view-grading','view-ai-config','view-banco'].forEach(v => {
             $(v)?.classList.add('hidden');
             $(v)?.classList.remove('flex');
         });
@@ -918,6 +1011,10 @@
             const tipoRaw    = (cols[5] || '').trim().toUpperCase();
             const puntajeRaw = parseFloat((cols[7] || '').trim());
             const puntaje    = (!isNaN(puntajeRaw) && puntajeRaw > 0) ? puntajeRaw : 1;
+            // v2.9: sesión académica y tópico (cols 8 y 9)
+            const sesionRaw  = parseInt((cols[8] || '').trim());
+            const sesion     = !isNaN(sesionRaw) && sesionRaw > 0 ? sesionRaw : null;
+            const topico     = (cols[9] || '').trim() || null;
 
             if (tipoRaw === 'ABIERTA') {
                 parsed.push({
@@ -926,7 +1023,7 @@
                     correcta: null,
                     tipo: 'abierta',
                     imageUrl: convertGDriveUrl(cols[6] || ''),
-                    puntaje
+                    puntaje, sesion, topico
                 });
             } else if (cols.length >= 5) {
                 parsed.push({
@@ -938,7 +1035,7 @@
                     correcta: (cols[5] || 'A').toUpperCase().charAt(0),
                     tipo: 'multiple_choice',
                     imageUrl: convertGDriveUrl(cols[6] || ''),
-                    puntaje
+                    puntaje, sesion, topico
                 });
             }
         }
@@ -1045,6 +1142,64 @@
         $('image-upload-panel').classList.add('hidden');
         $('btn-preview-wrap').classList.add('hidden');
         $('btn-launch-library').classList.remove('hidden');
+        updateBancoHint();
+    }
+
+    // ── SELECCIÓN DE PREGUNTAS PARA EXAMEN (Módulo B) ───────────────────────
+    function shuffleArray(arr) {
+        const a = [...arr];
+        for (let i = a.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+    }
+
+    /**
+     * Aplica la lógica de preselección del banco al conjunto de preguntas.
+     * Sólo actúa cuando mode === 'exam'.
+     * @param {Array} preguntas  — array completo de preguntas (con marcas)
+     * @param {string} examType  — 'parcial' | 'final'
+     * @param {number|null} n    — cuántas preguntas usar (null = todas)
+     * @returns {Array}          — array final listo para la sesión
+     */
+    function selectExamQuestions(preguntas, examType, n) {
+        if (!n || n <= 0) return preguntas; // sin límite → todas en orden original
+
+        const presel   = preguntas.filter(q => q.marcas && q.marcas[examType]);
+        const resto    = preguntas.filter(q => !(q.marcas && q.marcas[examType]));
+
+        let resultado;
+        if (presel.length >= n) {
+            // Hay suficientes preseleccionadas → elegir N aleatoriamente de ellas
+            resultado = shuffleArray(presel).slice(0, n);
+        } else {
+            // Faltan → todas las preseleccionadas + completar del resto aleatoriamente
+            const faltantes = n - presel.length;
+            resultado = [...presel, ...shuffleArray(resto).slice(0, faltantes)];
+        }
+        return resultado;
+    }
+
+    /** Actualiza el hint informativo al cambiar tipo de examen o cuestionario cargado */
+    function updateBancoHint() {
+        const hintDiv  = $('banco-hint');
+        const hintText = $('banco-hint-text');
+        if (!hintDiv || !hintText) return;
+        const mode = document.querySelector('input[name="session-mode"]:checked')?.value;
+        if (mode !== 'exam' || !parsedQuestions.length) { hintDiv.classList.add('hidden'); return; }
+
+        const tipo = document.querySelector('input[name="exam-type"]:checked')?.value || 'parcial';
+        const presel = parsedQuestions.filter(q => q.marcas && q.marcas[tipo]).length;
+        const total  = parsedQuestions.length;
+        const label  = tipo === 'parcial' ? 'Parcial' : 'Final';
+
+        if (presel === 0) {
+            hintText.textContent = `Este cuestionario no tiene preguntas marcadas para "${label}". Se usarán todas (${total}) aleatoriamente según el N° indicado.`;
+        } else {
+            hintText.textContent = `${presel} de ${total} preguntas marcadas para "${label}". Si N° ≤ ${presel}: se eligen aleatoriamente de las marcadas. Si N° > ${presel}: se incluyen las ${presel} marcadas y se completa con preguntas aleatorias.`;
+        }
+        hintDiv.classList.remove('hidden');
     }
 
     function clearLibrarySelection() {
@@ -1133,13 +1288,21 @@
         const timerSeconds = mode === 'quiz' ? (parseInt($('timer-select').value) || 0) : 0;
         const examMinutes  = mode === 'exam' ? (parseInt($('exam-minutes').value)  || 30) : 0;
         const randomOrder  = mode === 'exam' ? $('random-order').checked : false;
+        const examType     = mode === 'exam' ? (document.querySelector('input[name="exam-type"]:checked')?.value || 'parcial') : null;
+        const examNRaw     = mode === 'exam' ? parseInt($('exam-n-preguntas').value) : NaN;
+        const examN        = !isNaN(examNRaw) && examNRaw > 0 ? examNRaw : null;
+
+        // Selección de preguntas según banco de preselección
+        const questionsParaUsar = mode === 'exam'
+            ? selectExamQuestions(parsedQuestions, examType, examN)
+            : parsedQuestions;
 
         cloudId = genId('s_');
         sessionData = {
-            questions: parsedQuestions, currentIndex:0, votes:{}, voters:{}, participants:{},
+            questions: questionsParaUsar, currentIndex:0, votes:{}, voters:{}, participants:{},
             participantVotes:{}, examSubmissions:{}, reveal:false, status:'lobby',
             mode, timerSeconds, examMinutes, randomOrder, name,
-            accessType,
+            accessType, examType,
             participantList: selectedParticipantList ? selectedParticipantList.lista : null,
             questionChangedAt:0, examStartedAt:0
         };
@@ -1174,10 +1337,18 @@
         const examMinutes = mode === 'exam' ? (parseInt($('exam-minutes').value)  || 30) : 0;
         const randomOrder = mode === 'exam' ? $('random-order').checked : false;
         const name        = $('session-name-input').value.trim() || (mode === 'exam' ? 'Examen en Línea' : 'Cuestionario en Vivo');
+        const examType    = mode === 'exam' ? (document.querySelector('input[name="exam-type"]:checked')?.value || 'parcial') : null;
+        const examNRaw    = mode === 'exam' ? parseInt($('exam-n-preguntas').value) : NaN;
+        const examN       = !isNaN(examNRaw) && examNRaw > 0 ? examNRaw : null;
         cloudId = genId('s_');
 
+        // Selección de preguntas según banco de preselección
+        const questionsParaUsar = mode === 'exam'
+            ? selectExamQuestions(questions, examType, examN)
+            : questions;
+
         // Estado inicial: 'lobby' — los participantes se registran antes de empezar
-        sessionData = { questions, currentIndex:0, votes:{}, voters:{}, participants:{}, participantVotes:{}, examSubmissions:{}, reveal:false, status:'lobby', mode, timerSeconds, examMinutes, randomOrder, name, accessType, participantList: selectedParticipantList ? selectedParticipantList.lista : null, questionChangedAt:0, examStartedAt:0 };
+        sessionData = { questions: questionsParaUsar, currentIndex:0, votes:{}, voters:{}, participants:{}, participantVotes:{}, examSubmissions:{}, reveal:false, status:'lobby', mode, timerSeconds, examMinutes, randomOrder, name, accessType, examType, participantList: selectedParticipantList ? selectedParticipantList.lista : null, questionChangedAt:0, examStartedAt:0 };
 
         try {
             const { error } = await sb.from('quiz_session').insert([{ id: cloudId, data: sessionData }]);
@@ -1780,6 +1951,7 @@
         const mode = document.querySelector('input[name="session-mode"]:checked')?.value;
         $('quiz-options').classList.toggle('hidden', mode !== 'quiz');
         $('exam-options').classList.toggle('hidden', mode !== 'exam');
+        updateBancoHint();
     }
 
     // ── PANTALLA FINAL: PRESENTADOR ───────────────────────────────────────────
@@ -1892,6 +2064,11 @@
                     class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg transition text-sm">
                     <i class="fa-solid fa-pen-to-square mr-2"></i>Calificar respuestas abiertas
                 </button>` : ''}
+
+                <button onclick="downloadReportExcel()"
+                    class="w-full py-3 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg transition text-sm">
+                    <i class="fa-solid fa-file-excel mr-2"></i>Descargar Reporte Excel
+                </button>
 
                 <div class="flex gap-3">
                     <button onclick="resetApp()" class="flex-1 py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">
@@ -3221,6 +3398,286 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
             </div>
 
             <p class="text-center text-xs text-slate-600">Sesión: ${sessionId}</p>`;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // v2.9 — REPORTE ANALÍTICO EXCEL
+    // ════════════════════════════════════════════════════════════════════════════
+
+    async function downloadReportExcel() {
+        if (typeof XLSX === 'undefined') {
+            alert('La librería Excel aún no cargó. Espera un momento e intenta de nuevo.');
+            return;
+        }
+
+        // Cargar resultados desde Supabase (usa gradingResults si ya están, si no los carga)
+        let results = gradingResults && gradingResults.length > 0 ? gradingResults : null;
+        if (!results) {
+            const { data } = await sb.from('session_results').select('*').eq('quiz_session_id', cloudId);
+            results = data || [];
+        }
+
+        const questions = sessionData.questions || [];
+        const sesName   = sessionData.name || 'Cuestionario';
+        const fecha     = new Date().toLocaleDateString('es-PE', { year:'numeric', month:'long', day:'numeric' });
+        const wb        = XLSX.utils.book_new();
+
+        // ── Hoja 1: Resumen general ───────────────────────────────────────────
+        const notas  = results.map(r => r.nota).filter(n => n !== null && n !== undefined);
+        const avg    = notas.length ? (notas.reduce((s,n) => s+n, 0) / notas.length) : null;
+        const maxN   = notas.length ? Math.max(...notas) : null;
+        const minN   = notas.length ? Math.min(...notas) : null;
+        const aprob  = notas.filter(n => n >= 11).length;
+        const desapr = notas.filter(n => n < 11).length;
+
+        const ws1Data = [
+            ['REPORTE ANALÍTICO DE CUESTIONARIO'],
+            [],
+            ['Cuestionario', sesName],
+            ['Fecha de reporte', fecha],
+            ['Total participantes', results.length],
+            ['Participantes calificados', notas.length],
+            [],
+            ['ESTADÍSTICAS DE NOTAS (escala 20)'],
+            ['Promedio', avg !== null ? +avg.toFixed(2) : 'Pendiente'],
+            ['Nota más alta', maxN ?? 'Pendiente'],
+            ['Nota más baja', minN ?? 'Pendiente'],
+            ['Aprobados (≥11)', aprob],
+            ['Desaprobados (<11)', desapr],
+            ['% Aprobación', notas.length ? `${Math.round(aprob/notas.length*100)}%` : '—'],
+            [],
+            ['DISTRIBUCIÓN DE NOTAS'],
+            ['Rango', 'Cantidad'],
+            ['18 – 20 (Excelente)', notas.filter(n=>n>=18).length],
+            ['15 – 17 (Muy bueno)', notas.filter(n=>n>=15&&n<18).length],
+            ['11 – 14 (Bueno)', notas.filter(n=>n>=11&&n<15).length],
+            ['0 – 10 (Desaprobado)', notas.filter(n=>n<11).length],
+        ];
+        const ws1 = XLSX.utils.aoa_to_sheet(ws1Data);
+        ws1['!cols'] = [{wch:30},{wch:22}];
+        XLSX.utils.book_append_sheet(wb, ws1, 'Resumen');
+
+        // ── Hoja 2: Resultados por participante ───────────────────────────────
+        const ws2Header = ['Código', 'Participante', 'Nota (/20)', 'Puntaje Obtenido', 'Puntaje Posible', '% Logro', 'Estado', 'Calificado en'];
+        const ws2Rows   = results.map(r => {
+            const logro = r.puntaje_posible > 0 ? Math.round(r.puntaje_obtenido / r.puntaje_posible * 100) : null;
+            return [
+                r.participante_codigo,
+                r.participante_identificador,
+                r.nota ?? 'Pendiente',
+                r.puntaje_obtenido ?? 0,
+                r.puntaje_posible ?? 0,
+                logro !== null ? `${logro}%` : '—',
+                r.nota !== null ? (r.nota >= 11 ? 'Aprobado' : 'Desaprobado') : 'Pendiente',
+                r.calificado_en ? new Date(r.calificado_en).toLocaleString('es-PE') : '—'
+            ];
+        }).sort((a, b) => (b[2] === 'Pendiente' ? -1 : a[2] === 'Pendiente' ? 1 : b[2] - a[2]));
+        const ws2 = XLSX.utils.aoa_to_sheet([ws2Header, ...ws2Rows]);
+        ws2['!cols'] = [{wch:18},{wch:28},{wch:12},{wch:18},{wch:16},{wch:10},{wch:14},{wch:20}];
+        XLSX.utils.book_append_sheet(wb, ws2, 'Resultados por alumno');
+
+        // ── Hoja 3: Análisis por pregunta ─────────────────────────────────────
+        const ws3Header = ['N°', 'Sesión', 'Tópico', 'Pregunta', 'Tipo', 'Pts Máx', '% Acierto / Promedio pts', 'Calificación promedio (abiertas)'];
+        const ws3Rows   = questions.map((q, idx) => {
+            const tipo = (q.tipo || 'multiple_choice') === 'abierta' ? 'Abierta' : 'Opción múltiple';
+            const sesionLabel = q.sesion ? `Sesión ${q.sesion}` : '—';
+            const topicoLabel = q.topico || '—';
+
+            if ((q.tipo || 'multiple_choice') !== 'abierta') {
+                // MC: % de respuesta correcta
+                const total    = results.length;
+                const correctas = results.filter(r => {
+                    const resp = (r.respuestas || [])[idx];
+                    return resp && resp.correcta;
+                }).length;
+                const pct = total > 0 ? `${Math.round(correctas/total*100)}%` : '—';
+                return [idx+1, sesionLabel, topicoLabel, q.pregunta, tipo, q.puntaje || 1, pct, '—'];
+            } else {
+                // Abierta: promedio de puntaje obtenido
+                const ptsList = results
+                    .map(r => (r.respuestas || [])[idx]?.puntaje_obtenido)
+                    .filter(p => p !== undefined && p !== null);
+                const promPts = ptsList.length ? (ptsList.reduce((s,p)=>s+p,0)/ptsList.length).toFixed(2) : '—';
+                const promPct = (q.puntaje||1) > 0 && ptsList.length
+                    ? `${Math.round(ptsList.reduce((s,p)=>s+p,0)/ptsList.length/(q.puntaje||1)*100)}%` : '—';
+                return [idx+1, sesionLabel, topicoLabel, q.pregunta, tipo, q.puntaje || 1, promPct, promPts];
+            }
+        });
+        const ws3 = XLSX.utils.aoa_to_sheet([ws3Header, ...ws3Rows]);
+        ws3['!cols'] = [{wch:5},{wch:12},{wch:20},{wch:50},{wch:16},{wch:10},{wch:28},{wch:26}];
+        XLSX.utils.book_append_sheet(wb, ws3, 'Análisis por pregunta');
+
+        // ── Hoja 4: Respuestas detalladas (abiertas) ──────────────────────────
+        const openQs = questions.map((q,i)=>({q,i})).filter(({q})=>(q.tipo||'multiple_choice')==='abierta');
+        if (openQs.length > 0) {
+            const ws4Rows = [['Participante', 'Sesión', 'Tópico', 'Pregunta', 'Respuesta del alumno', 'Pts asignados', 'Pts máx', 'Anotación del profesor']];
+            results.forEach(r => {
+                openQs.forEach(({q, i}) => {
+                    const resp = (r.respuestas || [])[i];
+                    ws4Rows.push([
+                        r.participante_identificador,
+                        q.sesion ? `Sesión ${q.sesion}` : '—',
+                        q.topico || '—',
+                        q.pregunta,
+                        resp?.respuesta_dada || '(sin respuesta)',
+                        resp?.puntaje_obtenido ?? '—',
+                        q.puntaje || 1,
+                        resp?.anotacion || '—'
+                    ]);
+                });
+            });
+            const ws4 = XLSX.utils.aoa_to_sheet(ws4Rows);
+            ws4['!cols'] = [{wch:28},{wch:12},{wch:20},{wch:40},{wch:60},{wch:14},{wch:10},{wch:40}];
+            XLSX.utils.book_append_sheet(wb, ws4, 'Respuestas abiertas');
+        }
+
+        // Descargar
+        const fileName = `Reporte_${sesName.replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // v2.9 — BANCO DE PREGUNTAS: REVISIÓN Y PRESELECCIÓN
+    // ════════════════════════════════════════════════════════════════════════════
+
+    let bancoQuizId   = null;   // ID del quiz que se está revisando
+    let bancoPreguntas = [];    // Copia local con marcas editadas
+
+    async function initBanco() {
+        showView('view-banco');
+        $('banco-content').innerHTML = '';
+        $('banco-counters').classList.add('hidden');
+        bancoQuizId   = null;
+        bancoPreguntas = [];
+
+        // Cargar lista de quizzes
+        const sel = $('banco-quiz-select');
+        sel.innerHTML = '<option value="">— Cargando cuestionarios… —</option>';
+        const { data, error } = await sb.from('quizzes').select('id, nombre, preguntas').order('creado_en', { ascending: false });
+        sel.innerHTML = '<option value="">— Selecciona un cuestionario —</option>';
+        if (error || !data || data.length === 0) {
+            sel.innerHTML += '<option disabled>No hay cuestionarios en el banco</option>';
+            return;
+        }
+        data.forEach(q => {
+            const opt = document.createElement('option');
+            opt.value = q.id;
+            const n = Array.isArray(q.preguntas) ? q.preguntas.length : 0;
+            opt.textContent = `${q.nombre}  (${n} preguntas)`;
+            opt.dataset.preguntas = JSON.stringify(q.preguntas || []);
+            sel.appendChild(opt);
+        });
+    }
+
+    function loadBancoQuiz() {
+        const sel = $('banco-quiz-select');
+        const opt = sel.options[sel.selectedIndex];
+        if (!opt || !opt.value) {
+            $('banco-content').innerHTML = '';
+            $('banco-counters').classList.add('hidden');
+            return;
+        }
+        bancoQuizId    = opt.value;
+        bancoPreguntas = JSON.parse(opt.dataset.preguntas || '[]');
+        renderBanco();
+    }
+
+    function renderBanco() {
+        const qs = bancoPreguntas;
+        updateBancoCounters();
+
+        const html = qs.map((q, idx) => {
+            const tipo     = (q.tipo || 'multiple_choice') === 'abierta' ? 'Abierta' : 'Opción múltiple';
+            const tipoIcon = tipo === 'Abierta' ? '📝' : '🔘';
+            const mParcial = q.marcas?.parcial || false;
+            const mFinal   = q.marcas?.final   || false;
+            const sesLabel = q.sesion ? `<span class="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">Ses. ${q.sesion}</span>` : '';
+            const topLabel = q.topico ? `<span class="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">${q.topico}</span>` : '';
+
+            return `<div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 space-y-3">
+                <div class="flex items-start gap-3">
+                    <span class="text-slate-500 font-bold text-sm shrink-0 mt-0.5">${idx+1}.</span>
+                    <div class="flex-1 space-y-1">
+                        <p class="text-sm text-white leading-snug">${q.pregunta}</p>
+                        <div class="flex flex-wrap gap-1.5 items-center">
+                            <span class="text-xs text-slate-500">${tipoIcon} ${tipo} · ${q.puntaje || 1} pts</span>
+                            ${sesLabel}${topLabel}
+                        </div>
+                    </div>
+                </div>
+                <div class="flex gap-2 pt-1">
+                    <button onclick="toggleMarca(${idx},'parcial')" id="btn-parcial-${idx}"
+                        class="flex-1 py-2 rounded-xl text-xs font-bold border transition ${mParcial
+                            ? 'bg-amber-700/60 border-amber-500 text-amber-200'
+                            : 'bg-slate-700/60 border-slate-600 text-slate-400 hover:border-amber-600 hover:text-amber-300'}">
+                        <i class="fa-solid fa-p mr-1"></i>Examen Parcial
+                    </button>
+                    <button onclick="toggleMarca(${idx},'final')" id="btn-final-${idx}"
+                        class="flex-1 py-2 rounded-xl text-xs font-bold border transition ${mFinal
+                            ? 'bg-purple-700/60 border-purple-500 text-purple-200'
+                            : 'bg-slate-700/60 border-slate-600 text-slate-400 hover:border-purple-600 hover:text-purple-300'}">
+                        <i class="fa-solid fa-f mr-1"></i>Examen Final
+                    </button>
+                </div>
+            </div>`;
+        }).join('');
+
+        $('banco-content').innerHTML = html || '<p class="text-slate-500 text-sm text-center">Este cuestionario no tiene preguntas.</p>';
+        $('banco-counters').classList.remove('hidden');
+    }
+
+    function toggleMarca(idx, tipo) {
+        if (!bancoPreguntas[idx]) return;
+        bancoPreguntas[idx].marcas = bancoPreguntas[idx].marcas || {};
+        bancoPreguntas[idx].marcas[tipo] = !bancoPreguntas[idx].marcas[tipo];
+
+        // Actualizar botón visualmente sin re-renderizar todo
+        const btn = $(`btn-${tipo}-${idx}`);
+        const activo = bancoPreguntas[idx].marcas[tipo];
+        if (tipo === 'parcial') {
+            btn.className = `flex-1 py-2 rounded-xl text-xs font-bold border transition ${activo
+                ? 'bg-amber-700/60 border-amber-500 text-amber-200'
+                : 'bg-slate-700/60 border-slate-600 text-slate-400 hover:border-amber-600 hover:text-amber-300'}`;
+        } else {
+            btn.className = `flex-1 py-2 rounded-xl text-xs font-bold border transition ${activo
+                ? 'bg-purple-700/60 border-purple-500 text-purple-200'
+                : 'bg-slate-700/60 border-slate-600 text-slate-400 hover:border-purple-600 hover:text-purple-300'}`;
+        }
+        updateBancoCounters();
+    }
+
+    function updateBancoCounters() {
+        const cP = bancoPreguntas.filter(q => q.marcas?.parcial).length;
+        const cF = bancoPreguntas.filter(q => q.marcas?.final).length;
+        $('cnt-parcial').textContent = cP;
+        $('cnt-final').textContent   = cF;
+        $('cnt-total').textContent   = bancoPreguntas.length;
+    }
+
+    async function saveBancoMarks() {
+        if (!bancoQuizId) return;
+        const statusEl = $('banco-save-status');
+        const btn      = $('btn-banco-save');
+        btn.disabled   = true;
+        statusEl.textContent = '⏳ Guardando…';
+
+        const { error } = await sb.from('quizzes')
+            .update({ preguntas: bancoPreguntas })
+            .eq('id', bancoQuizId);
+
+        btn.disabled = false;
+        if (error) {
+            statusEl.textContent = `⚠️ Error: ${error.message}`;
+            statusEl.style.color = '#f87171';
+        } else {
+            statusEl.textContent = '✅ Marcas guardadas';
+            statusEl.style.color = '';
+            // Actualizar también el option del selector para reflejar los nuevos datos
+            const sel = $('banco-quiz-select');
+            const opt = sel.options[sel.selectedIndex];
+            if (opt) opt.dataset.preguntas = JSON.stringify(bancoPreguntas);
+            setTimeout(() => { statusEl.textContent = ''; }, 3000);
+        }
     }
 
     </script>
