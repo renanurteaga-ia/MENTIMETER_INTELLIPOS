@@ -272,19 +272,26 @@
                     <!-- Tipo de examen -->
                     <div>
                         <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Tipo de examen</label>
-                        <div class="grid grid-cols-2 gap-2">
+                        <div class="grid grid-cols-3 gap-2">
                             <label class="flex items-center space-x-2 bg-slate-900 border border-slate-700 rounded-xl p-2.5 cursor-pointer hover:border-amber-500 transition has-[:checked]:border-amber-500 has-[:checked]:bg-amber-950/30">
                                 <input type="radio" name="exam-type" value="parcial" checked onchange="updateBancoHint()" class="accent-amber-500">
                                 <div>
                                     <span class="text-sm text-white block">📋 Examen Parcial</span>
-                                    <span class="text-xs text-slate-400">Usa preguntas marcadas Parcial</span>
+                                    <span class="text-xs text-slate-400">Preguntas marcadas Parcial</span>
                                 </div>
                             </label>
                             <label class="flex items-center space-x-2 bg-slate-900 border border-slate-700 rounded-xl p-2.5 cursor-pointer hover:border-purple-500 transition has-[:checked]:border-purple-500 has-[:checked]:bg-purple-950/30">
                                 <input type="radio" name="exam-type" value="final" onchange="updateBancoHint()" class="accent-purple-500">
                                 <div>
                                     <span class="text-sm text-white block">🏁 Examen Final</span>
-                                    <span class="text-xs text-slate-400">Usa preguntas marcadas Final</span>
+                                    <span class="text-xs text-slate-400">Preguntas marcadas Final</span>
+                                </div>
+                            </label>
+                            <label class="flex items-center space-x-2 bg-slate-900 border border-slate-700 rounded-xl p-2.5 cursor-pointer hover:border-emerald-500 transition has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-950/30">
+                                <input type="radio" name="exam-type" value="practica" onchange="updateBancoHint()" class="accent-emerald-500">
+                                <div>
+                                    <span class="text-sm text-white block">✏️ Práctica Calif.</span>
+                                    <span class="text-xs text-slate-400">Preguntas marcadas Práctica</span>
                                 </div>
                             </label>
                         </div>
@@ -848,12 +855,15 @@
                     </select>
                 </div>
                 <!-- Contadores -->
-                <div id="banco-counters" class="hidden flex gap-4 pt-1">
+                <div id="banco-counters" class="hidden flex flex-wrap gap-2 pt-1">
                     <span class="text-xs px-3 py-1 rounded-full bg-amber-900/40 border border-amber-700/40 text-amber-300 font-semibold">
                         <i class="fa-solid fa-p mr-1"></i>Parcial: <span id="cnt-parcial">0</span>
                     </span>
                     <span class="text-xs px-3 py-1 rounded-full bg-purple-900/40 border border-purple-700/40 text-purple-300 font-semibold">
                         <i class="fa-solid fa-f mr-1"></i>Final: <span id="cnt-final">0</span>
+                    </span>
+                    <span class="text-xs px-3 py-1 rounded-full bg-emerald-900/40 border border-emerald-700/40 text-emerald-300 font-semibold">
+                        <i class="fa-solid fa-pencil mr-1"></i>Práctica: <span id="cnt-practica">0</span>
                     </span>
                     <span class="text-xs px-3 py-1 rounded-full bg-slate-700/60 border border-slate-600 text-slate-400 font-semibold">
                         Total: <span id="cnt-total">0</span>
@@ -1210,10 +1220,11 @@
         const mode = document.querySelector('input[name="session-mode"]:checked')?.value;
         if (mode !== 'exam' || !parsedQuestions.length) { hintDiv.classList.add('hidden'); return; }
 
-        const tipo = document.querySelector('input[name="exam-type"]:checked')?.value || 'parcial';
+        const tipo   = document.querySelector('input[name="exam-type"]:checked')?.value || 'parcial';
+        const labels = { parcial:'Examen Parcial', final:'Examen Final', practica:'Práctica Calificada' };
+        const label  = labels[tipo] || tipo;
         const presel = parsedQuestions.filter(q => q.marcas && q.marcas[tipo]).length;
         const total  = parsedQuestions.length;
-        const label  = tipo === 'parcial' ? 'Parcial' : 'Final';
 
         if (presel === 0) {
             hintText.textContent = `Este cuestionario no tiene preguntas marcadas para "${label}". Se usarán todas (${total}) aleatoriamente según el N° indicado.`;
@@ -3364,7 +3375,11 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
 
         // Cargar info de la sesión para mostrar nombre del quiz
         const { data: sesData } = await sb.from('quiz_session').select('data').eq('id', sessionId).single();
-        const sesName = sesData?.data?.name || 'Cuestionario';
+        const sesName    = sesData?.data?.name || 'Cuestionario';
+        const tipoLabels = { parcial:'Examen Parcial', final:'Examen Final', practica:'Práctica Calificada' };
+        const tipoPrueba = sesData?.data?.mode === 'exam'
+            ? (tipoLabels[sesData?.data?.examType] || 'Examen')
+            : 'Cuestionario';
 
         const respuestas = data.respuestas || [];
         const hayPendientes = respuestas.some(r => r.pendiente_calificacion);
@@ -3402,6 +3417,7 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
             <div class="text-center space-y-1 pb-2">
                 <div class="text-4xl">📋</div>
                 <h2 class="text-xl font-extrabold text-white">${sesName}</h2>
+                <p class="text-xs font-semibold text-indigo-400 uppercase tracking-wider">${tipoPrueba}</p>
                 <p class="text-xs text-slate-400">${data.participante_identificador}</p>
             </div>
 
@@ -3455,10 +3471,16 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
         const aprob  = notas.filter(n => n >= 11).length;
         const desapr = notas.filter(n => n < 11).length;
 
+        const tipoLabels = { parcial:'Examen Parcial', final:'Examen Final', practica:'Práctica Calificada' };
+        const tipoPrueba = sessionData.mode === 'exam'
+            ? (tipoLabels[sessionData.examType] || 'Examen')
+            : 'Cuestionario';
+
         const ws1Data = [
-            ['REPORTE ANALÍTICO DE CUESTIONARIO'],
+            ['REPORTE ANALÍTICO DE EVALUACIÓN'],
             [],
             ['Cuestionario', sesName],
+            ['Tipo de prueba', tipoPrueba],
             ['Fecha de reporte', fecha],
             ['Total participantes', results.length],
             ['Participantes calificados', notas.length],
@@ -3616,8 +3638,9 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
         const html = qs.map((q, idx) => {
             const tipo     = (q.tipo || 'multiple_choice') === 'abierta' ? 'Abierta' : 'Opción múltiple';
             const tipoIcon = tipo === 'Abierta' ? '📝' : '🔘';
-            const mParcial = q.marcas?.parcial || false;
-            const mFinal   = q.marcas?.final   || false;
+            const mParcial  = q.marcas?.parcial   || false;
+            const mFinal    = q.marcas?.final     || false;
+            const mPractica = q.marcas?.practica  || false;
             const sesLabel = q.sesion ? `<span class="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">Ses. ${q.sesion}</span>` : '';
             const topLabel = q.topico ? `<span class="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">${q.topico}</span>` : '';
 
@@ -3652,13 +3675,19 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
                         class="flex-1 py-2 rounded-xl text-xs font-bold border transition ${mParcial
                             ? 'bg-amber-700/60 border-amber-500 text-amber-200'
                             : 'bg-slate-700/60 border-slate-600 text-slate-400 hover:border-amber-600 hover:text-amber-300'}">
-                        <i class="fa-solid fa-p mr-1"></i>Examen Parcial
+                        <i class="fa-solid fa-p mr-1"></i>Parcial
                     </button>
                     <button onclick="toggleMarca(${idx},'final')" id="btn-final-${idx}"
                         class="flex-1 py-2 rounded-xl text-xs font-bold border transition ${mFinal
                             ? 'bg-purple-700/60 border-purple-500 text-purple-200'
                             : 'bg-slate-700/60 border-slate-600 text-slate-400 hover:border-purple-600 hover:text-purple-300'}">
-                        <i class="fa-solid fa-f mr-1"></i>Examen Final
+                        <i class="fa-solid fa-f mr-1"></i>Final
+                    </button>
+                    <button onclick="toggleMarca(${idx},'practica')" id="btn-practica-${idx}"
+                        class="flex-1 py-2 rounded-xl text-xs font-bold border transition ${mPractica
+                            ? 'bg-emerald-700/60 border-emerald-500 text-emerald-200'
+                            : 'bg-slate-700/60 border-slate-600 text-slate-400 hover:border-emerald-600 hover:text-emerald-300'}">
+                        <i class="fa-solid fa-pencil mr-1"></i>Práctica
                     </button>
                 </div>
             </div>`;
@@ -3687,24 +3716,24 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
         // Actualizar botón visualmente sin re-renderizar todo
         const btn = $(`btn-${tipo}-${idx}`);
         const activo = bancoPreguntas[idx].marcas[tipo];
-        if (tipo === 'parcial') {
-            btn.className = `flex-1 py-2 rounded-xl text-xs font-bold border transition ${activo
-                ? 'bg-amber-700/60 border-amber-500 text-amber-200'
-                : 'bg-slate-700/60 border-slate-600 text-slate-400 hover:border-amber-600 hover:text-amber-300'}`;
-        } else {
-            btn.className = `flex-1 py-2 rounded-xl text-xs font-bold border transition ${activo
-                ? 'bg-purple-700/60 border-purple-500 text-purple-200'
-                : 'bg-slate-700/60 border-slate-600 text-slate-400 hover:border-purple-600 hover:text-purple-300'}`;
-        }
+        const clases = {
+            parcial:  [' bg-amber-700/60 border-amber-500 text-amber-200',   ' bg-slate-700/60 border-slate-600 text-slate-400 hover:border-amber-600 hover:text-amber-300'],
+            final:    [' bg-purple-700/60 border-purple-500 text-purple-200', ' bg-slate-700/60 border-slate-600 text-slate-400 hover:border-purple-600 hover:text-purple-300'],
+            practica: [' bg-emerald-700/60 border-emerald-500 text-emerald-200', ' bg-slate-700/60 border-slate-600 text-slate-400 hover:border-emerald-600 hover:text-emerald-300']
+        };
+        const [on, off] = clases[tipo] || clases.parcial;
+        btn.className = `flex-1 py-2 rounded-xl text-xs font-bold border transition${activo ? on : off}`;
         updateBancoCounters();
     }
 
     function updateBancoCounters() {
         const cP = bancoPreguntas.filter(q => q.marcas?.parcial).length;
         const cF = bancoPreguntas.filter(q => q.marcas?.final).length;
-        $('cnt-parcial').textContent = cP;
-        $('cnt-final').textContent   = cF;
-        $('cnt-total').textContent   = bancoPreguntas.length;
+        const cPr = bancoPreguntas.filter(q => q.marcas?.practica).length;
+        $('cnt-parcial').textContent  = cP;
+        $('cnt-final').textContent    = cF;
+        $('cnt-practica').textContent = cPr;
+        $('cnt-total').textContent    = bancoPreguntas.length;
     }
 
     async function saveBancoMarks() {
