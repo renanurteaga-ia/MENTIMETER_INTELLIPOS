@@ -201,6 +201,7 @@
                     <div>
                         <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Modalidad</label>
                         <div class="grid grid-cols-2 gap-2">
+
                             <label class="flex items-center space-x-2 bg-slate-900 border border-slate-700 rounded-xl p-2.5 cursor-pointer hover:border-indigo-500 transition has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-950/40">
                                 <input type="radio" name="session-mode" value="quiz" checked onchange="toggleModeOptions()" class="accent-indigo-500">
                                 <span class="text-sm text-white">🎯 Cuestionario</span>
@@ -210,6 +211,26 @@
                                 <span class="text-sm text-white">📝 Examen</span>
                             </label>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Sesión / Módulo y Tópico general (fallback para analítica) -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                            N° Sesión / Módulo
+                            <span class="normal-case font-normal text-slate-500 ml-1">(opcional)</span>
+                        </label>
+                        <input type="number" id="setup-sesion" min="1" placeholder="Ej: 3"
+                            class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-teal-500 transition">
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                            Tópico general
+                            <span class="normal-case font-normal text-slate-500 ml-1">(opcional — se usa si la pregunta no tiene tópico propio)</span>
+                        </label>
+                        <input type="text" id="setup-topico" placeholder="Ej: Costos variables y punto de equilibrio"
+                            class="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-teal-500 transition">
                     </div>
                 </div>
 
@@ -1285,12 +1306,14 @@
         }
 
         const name = $('session-name-input').value.trim() || (mode === 'exam' ? 'Examen en Línea' : 'Cuestionario en Vivo');
-        const timerSeconds = mode === 'quiz' ? (parseInt($('timer-select').value) || 0) : 0;
-        const examMinutes  = mode === 'exam' ? (parseInt($('exam-minutes').value)  || 30) : 0;
-        const randomOrder  = mode === 'exam' ? $('random-order').checked : false;
-        const examType     = mode === 'exam' ? (document.querySelector('input[name="exam-type"]:checked')?.value || 'parcial') : null;
-        const examNRaw     = mode === 'exam' ? parseInt($('exam-n-preguntas').value) : NaN;
-        const examN        = !isNaN(examNRaw) && examNRaw > 0 ? examNRaw : null;
+        const timerSeconds   = mode === 'quiz' ? (parseInt($('timer-select').value) || 0) : 0;
+        const examMinutes    = mode === 'exam' ? (parseInt($('exam-minutes').value)  || 30) : 0;
+        const randomOrder    = mode === 'exam' ? $('random-order').checked : false;
+        const examType       = mode === 'exam' ? (document.querySelector('input[name="exam-type"]:checked')?.value || 'parcial') : null;
+        const examNRaw       = mode === 'exam' ? parseInt($('exam-n-preguntas').value) : NaN;
+        const examN          = !isNaN(examNRaw) && examNRaw > 0 ? examNRaw : null;
+        const sesionDefault  = parseInt($('setup-sesion').value) || null;
+        const topicoDefault  = $('setup-topico').value.trim() || null;
 
         // Selección de preguntas según banco de preselección
         const questionsParaUsar = mode === 'exam'
@@ -1302,7 +1325,7 @@
             questions: questionsParaUsar, currentIndex:0, votes:{}, voters:{}, participants:{},
             participantVotes:{}, examSubmissions:{}, reveal:false, status:'lobby',
             mode, timerSeconds, examMinutes, randomOrder, name,
-            accessType, examType,
+            accessType, examType, sesionDefault, topicoDefault,
             participantList: selectedParticipantList ? selectedParticipantList.lista : null,
             questionChangedAt:0, examStartedAt:0
         };
@@ -1333,13 +1356,15 @@
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Guardando…';
         btn.disabled = true;
 
-        const timerSeconds= mode === 'quiz' ? (parseInt($('timer-select').value) || 0) : 0;
-        const examMinutes = mode === 'exam' ? (parseInt($('exam-minutes').value)  || 30) : 0;
-        const randomOrder = mode === 'exam' ? $('random-order').checked : false;
-        const name        = $('session-name-input').value.trim() || (mode === 'exam' ? 'Examen en Línea' : 'Cuestionario en Vivo');
-        const examType    = mode === 'exam' ? (document.querySelector('input[name="exam-type"]:checked')?.value || 'parcial') : null;
-        const examNRaw    = mode === 'exam' ? parseInt($('exam-n-preguntas').value) : NaN;
-        const examN       = !isNaN(examNRaw) && examNRaw > 0 ? examNRaw : null;
+        const timerSeconds  = mode === 'quiz' ? (parseInt($('timer-select').value) || 0) : 0;
+        const examMinutes   = mode === 'exam' ? (parseInt($('exam-minutes').value)  || 30) : 0;
+        const randomOrder   = mode === 'exam' ? $('random-order').checked : false;
+        const name          = $('session-name-input').value.trim() || (mode === 'exam' ? 'Examen en Línea' : 'Cuestionario en Vivo');
+        const examType      = mode === 'exam' ? (document.querySelector('input[name="exam-type"]:checked')?.value || 'parcial') : null;
+        const examNRaw      = mode === 'exam' ? parseInt($('exam-n-preguntas').value) : NaN;
+        const examN         = !isNaN(examNRaw) && examNRaw > 0 ? examNRaw : null;
+        const sesionDefault = parseInt($('setup-sesion').value) || null;
+        const topicoDefault = $('setup-topico').value.trim() || null;
         cloudId = genId('s_');
 
         // Selección de preguntas según banco de preselección
@@ -1348,7 +1373,7 @@
             : questions;
 
         // Estado inicial: 'lobby' — los participantes se registran antes de empezar
-        sessionData = { questions: questionsParaUsar, currentIndex:0, votes:{}, voters:{}, participants:{}, participantVotes:{}, examSubmissions:{}, reveal:false, status:'lobby', mode, timerSeconds, examMinutes, randomOrder, name, accessType, examType, participantList: selectedParticipantList ? selectedParticipantList.lista : null, questionChangedAt:0, examStartedAt:0 };
+        sessionData = { questions: questionsParaUsar, currentIndex:0, votes:{}, voters:{}, participants:{}, participantVotes:{}, examSubmissions:{}, reveal:false, status:'lobby', mode, timerSeconds, examMinutes, randomOrder, name, accessType, examType, sesionDefault, topicoDefault, participantList: selectedParticipantList ? selectedParticipantList.lista : null, questionChangedAt:0, examStartedAt:0 };
 
         try {
             const { error } = await sb.from('quiz_session').insert([{ id: cloudId, data: sessionData }]);
@@ -3480,8 +3505,10 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
         const ws3Header = ['N°', 'Sesión', 'Tópico', 'Pregunta', 'Tipo', 'Pts Máx', '% Acierto / Promedio pts', 'Calificación promedio (abiertas)'];
         const ws3Rows   = questions.map((q, idx) => {
             const tipo = (q.tipo || 'multiple_choice') === 'abierta' ? 'Abierta' : 'Opción múltiple';
-            const sesionLabel = q.sesion ? `Sesión ${q.sesion}` : '—';
-            const topicoLabel = q.topico || '—';
+            const sesionVal   = q.sesion || sessionData.sesionDefault;
+            const topicoVal   = q.topico || sessionData.topicoDefault;
+            const sesionLabel = sesionVal ? `Sesión ${sesionVal}` : '—';
+            const topicoLabel = topicoVal || '—';
 
             if ((q.tipo || 'multiple_choice') !== 'abierta') {
                 // MC: % de respuesta correcta
@@ -3516,8 +3543,8 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
                     const resp = (r.respuestas || [])[i];
                     ws4Rows.push([
                         r.participante_identificador,
-                        q.sesion ? `Sesión ${q.sesion}` : '—',
-                        q.topico || '—',
+                        (q.sesion || sessionData.sesionDefault) ? `Sesión ${q.sesion || sessionData.sesionDefault}` : '—',
+                        q.topico || sessionData.topicoDefault || '—',
                         q.pregunta,
                         resp?.respuesta_dada || '(sin respuesta)',
                         resp?.puntaje_obtenido ?? '—',
@@ -3605,6 +3632,21 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
                         </div>
                     </div>
                 </div>
+                <!-- Sesión y Tópico editables -->
+                <div class="grid grid-cols-3 gap-2">
+                    <div>
+                        <label class="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Sesión N°</label>
+                        <input type="number" min="1" value="${q.sesion || ''}" placeholder="—"
+                            onchange="setBancoSesion(${idx}, this.value)"
+                            class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-teal-500 transition">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-[10px] text-slate-500 uppercase tracking-wider mb-1">Tópico</label>
+                        <input type="text" value="${(q.topico || '').replace(/"/g,'&quot;')}" placeholder="Ej: Costos variables"
+                            onchange="setBancoTopico(${idx}, this.value)"
+                            class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-teal-500 transition">
+                    </div>
+                </div>
                 <div class="flex gap-2 pt-1">
                     <button onclick="toggleMarca(${idx},'parcial')" id="btn-parcial-${idx}"
                         class="flex-1 py-2 rounded-xl text-xs font-bold border transition ${mParcial
@@ -3624,6 +3666,17 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
 
         $('banco-content').innerHTML = html || '<p class="text-slate-500 text-sm text-center">Este cuestionario no tiene preguntas.</p>';
         $('banco-counters').classList.remove('hidden');
+    }
+
+    function setBancoSesion(idx, val) {
+        if (!bancoPreguntas[idx]) return;
+        const n = parseInt(val);
+        bancoPreguntas[idx].sesion = (!isNaN(n) && n > 0) ? n : null;
+    }
+
+    function setBancoTopico(idx, val) {
+        if (!bancoPreguntas[idx]) return;
+        bancoPreguntas[idx].topico = val.trim() || null;
     }
 
     function toggleMarca(idx, tipo) {
