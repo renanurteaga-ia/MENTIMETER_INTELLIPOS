@@ -1160,7 +1160,7 @@
         const sel = $('library-select');
         const opt = sel.options[sel.selectedIndex];
         if (!opt || !opt.value) { alert('Selecciona un cuestionario de la lista.'); return; }
-        parsedQuestions = JSON.parse(opt.dataset.preguntas);
+        parsedQuestions = normalizarPreguntas(JSON.parse(opt.dataset.preguntas));
         $('library-loaded-name').textContent = opt.textContent.split('(')[0].trim();
         $('library-loaded-count').textContent = parsedQuestions.length;
         $('library-loaded-msg').classList.remove('hidden');
@@ -1174,6 +1174,17 @@
         $('btn-preview-wrap').classList.add('hidden');
         $('btn-launch-library').classList.remove('hidden');
         updateBancoHint();
+    }
+
+    // ── NORMALIZACIÓN DE TIPO DE PREGUNTA ────────────────────────────────────
+    // Infiere el campo 'tipo' para preguntas antiguas guardadas sin él.
+    // Una pregunta se considera 'abierta' si no tiene opcionA ni correcta.
+    function normalizarPreguntas(arr) {
+        return (arr || []).map(q => {
+            if (q.tipo) return q;
+            const esAbierta = !q.opcionA && !q.correcta;
+            return { ...q, tipo: esAbierta ? 'abierta' : 'multiple_choice' };
+        });
     }
 
     // ── SELECCIÓN DE PREGUNTAS PARA EXAMEN (Módulo B) ───────────────────────
@@ -2499,6 +2510,8 @@
         const latest = await fetchData();
         if (!latest) { alert('Error al conectar con la sesión.'); return; }
         sessionData = latest;
+        // Normalizar tipo de preguntas (compatibilidad con quizzes guardados sin campo 'tipo')
+        if (sessionData.questions) sessionData.questions = normalizarPreguntas(sessionData.questions);
 
         if (sessionData.status === 'ended') { renderEndParticipant(); return; }
 
@@ -2547,6 +2560,8 @@
         const latest = await fetchData();
         if (!latest) { errEl.textContent = 'Error al conectar con la sesión.'; errEl.classList.remove('hidden'); return; }
         sessionData = latest;
+        // Normalizar tipo de preguntas (compatibilidad con quizzes guardados sin campo 'tipo')
+        if (sessionData.questions) sessionData.questions = normalizarPreguntas(sessionData.questions);
 
         if (sessionData.status === 'ended') { renderEndParticipant(); return; }
 
