@@ -2468,6 +2468,7 @@
             return;
         }
         sessionData = data;
+        if (sessionData.questions) sessionData.questions = normalizarPreguntas(sessionData.questions);
 
         if (sessionData.status === 'ended') { renderEndParticipant(); return; }
 
@@ -2607,6 +2608,8 @@
         const prevIndex  = sessionData.currentIndex;
         const prevReveal = sessionData.reveal;
         sessionData = incoming;
+        // Normalizar tipo de preguntas en cada actualización (compat. con quizzes sin campo 'tipo')
+        if (sessionData.questions) sessionData.questions = normalizarPreguntas(sessionData.questions);
 
         if (sessionData.status === 'ended') { renderEndParticipant(); return; }
 
