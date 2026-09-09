@@ -1177,13 +1177,13 @@
     }
 
     // ── NORMALIZACIÓN DE TIPO DE PREGUNTA ────────────────────────────────────
-    // Infiere el campo 'tipo' para preguntas antiguas guardadas sin él.
-    // Una pregunta se considera 'abierta' si no tiene opcionA ni correcta.
+    // Infiere el campo 'tipo' para preguntas guardadas sin él o con valor incorrecto.
+    // Regla: si opcionA está vacía → pregunta abierta (una MC siempre tiene al menos opcionA).
     function normalizarPreguntas(arr) {
         return (arr || []).map(q => {
-            if (q.tipo) return q;
-            const esAbierta = !q.opcionA && !q.correcta;
-            return { ...q, tipo: esAbierta ? 'abierta' : 'multiple_choice' };
+            if (q.tipo === 'abierta') return q;                    // ya correcto
+            if (!q.opcionA) return { ...q, tipo: 'abierta', correcta: '' }; // sin opciones → abierta
+            return { ...q, tipo: q.tipo || 'multiple_choice' };    // MC normal
         });
     }
 
