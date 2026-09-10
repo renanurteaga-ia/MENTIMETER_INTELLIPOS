@@ -2179,8 +2179,19 @@
                     <p class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Tu calificación${hasOpenQ ? ' (MC)' : ''}</p>
                     <p class="text-7xl font-extrabold ${notaColor}">${notaDisp}</p>
                     <p class="text-sm text-slate-400">${myScore ? `${myScore.correct} de ${myScore.total} correctas (opción múltiple)` : ''}</p>
-                    ${hasOpenQ ? '<p class="text-xs text-amber-400 mt-1">Preguntas abiertas pendientes de calificación</p>' : ''}
+                    ${hasOpenQ ? '<p class="text-xs text-amber-400 mt-1" id="open-q-status">⏳ Esperando calificación del profesor…</p>' : ''}
                 </div>
+
+                ${hasOpenQ ? `
+                <!-- Botón Ver nota final -->
+                <div id="nota-final-section" class="bg-indigo-950/60 border border-indigo-700/50 rounded-2xl p-4 space-y-3 text-center">
+                    <p class="text-xs text-indigo-300 uppercase tracking-wider font-semibold"><i class="fa-solid fa-star mr-1"></i>Nota final con preguntas abiertas</p>
+                    <p class="text-xs text-slate-400" id="nota-final-hint">Cuando el profesor califique las preguntas abiertas, tu nota final estará disponible aquí.</p>
+                    <button onclick="loadBoleta('${cloudId}','${participantId}')"
+                        class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-file-lines"></i> Ver mi nota final
+                    </button>
+                </div>` : ''}
 
                 <!-- Nota promedio -->
                 <div class="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 flex items-center justify-between">
@@ -2238,14 +2249,13 @@
                 </div>
 
                 ${hasOpenQ ? `
-                <!-- Link permanente a boleta -->
-                <div class="bg-slate-800 border border-indigo-800/50 rounded-2xl p-4 space-y-2">
-                    <p class="text-xs font-semibold text-indigo-300 uppercase tracking-wider"><i class="fa-solid fa-link mr-1"></i>Tu boleta personal</p>
-                    <p class="text-xs text-slate-400">Guarda este enlace para ver tu calificación cuando el profesor la publique:</p>
+                <!-- Enlace copiable como respaldo -->
+                <div class="bg-slate-800/40 border border-slate-700/40 rounded-2xl p-3 space-y-1">
+                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider"><i class="fa-solid fa-link mr-1"></i>Enlace de respaldo</p>
                     <div class="flex items-center gap-2 bg-slate-900 rounded-xl border border-slate-700 p-2">
                         <input type="text" id="boleta-link-input" readonly value="${location.origin + location.pathname}?results=${cloudId}&pid=${participantId}"
-                            class="bg-transparent text-[10px] text-indigo-400 w-full outline-none font-mono truncate">
-                        <button onclick="copyBoleta()" class="shrink-0 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg transition" title="Copiar enlace">
+                            class="bg-transparent text-[9px] text-slate-500 w-full outline-none font-mono truncate">
+                        <button onclick="copyBoleta()" class="shrink-0 px-2 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs rounded-lg transition" title="Copiar enlace">
                             <i class="fa-solid fa-copy"></i>
                         </button>
                     </div>
@@ -2255,6 +2265,47 @@
                     Volver al inicio
                 </button>
             </div>`;
+
+        // Auto-poll: cuando hay preguntas abiertas, verificar si el profesor ya calificó
+        if (hasOpenQ && cloudId && participantId) {
+            _startNotaFinalPolling(cloudId, participantId);
+        }
+    }
+
+    let _notaFinalPollInterval = null;
+    function _startNotaFinalPolling(sessionId, pid) {
+        // Limpiar intervalo anterior si existe
+        if (_notaFinalPollInterval) clearInterval(_notaFinalPollInterval);
+
+        _notaFinalPollInterval = setInterval(async () => {
+            try {
+                const { data, error } = await sb.from('session_results')
+                    .select('nota, respuestas')
+                    .eq('quiz_session_id', sessionId)
+                    .eq('participante_codigo', pid)
+                    .single();
+
+                if (error || !data) return;
+
+                const pendientes = (data.respuestas || []).some(r => r.pendiente_calificacion);
+                const notaFinal  = data.nota;
+
+                if (!pendientes && notaFinal !== null && notaFinal !== undefined) {
+                    // ¡El profesor ya calificó! Actualizar UI
+                    clearInterval(_notaFinalPollInterval);
+                    _notaFinalPollInterval = null;
+
+                    const statusEl = document.getElementById('open-q-status');
+                    if (statusEl) statusEl.textContent = '✅ ¡El profesor ya calificó tus respuestas!';
+
+                    const hintEl = document.getElementById('nota-final-hint');
+                    if (hintEl) {
+                        const color = notaFinal >= 14 ? 'text-emerald-400' : notaFinal >= 11 ? 'text-amber-400' : 'text-red-400';
+                        hintEl.innerHTML = `Tu nota final es <span class="text-2xl font-extrabold ${color}">${notaFinal.toFixed(1)}</span> — haz clic para ver el detalle.`;
+                    }
+                }
+            } catch(e) { /* silencioso */ }
+        }, 6000); // cada 6 segundos
     }
 
     function copyBoleta() {
