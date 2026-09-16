@@ -92,7 +92,7 @@
         <span class="font-mono text-amber-400">ABIERTA</span> en col 6 (las opciones se ignoran).<br>
         Para una <span class="text-violet-400 font-semibold">pregunta ponderada</span>, pon
         <span class="font-mono text-violet-400">PONDERADA</span> en col 6 y los pesos de cada opción en las cols 11-14 (PtjA…PtjD).<br>
-        Al final de las preguntas, agrega filas de rango: <span class="font-mono text-emerald-400">R1 · min · max · Nombre del rango · Diagnóstico</span>
+        Al final de las preguntas, agrega filas de rango: <span class="font-mono text-emerald-400">R1 · min · max · Nombre · Diagnóstico · Tu realidad (opcional) · Tu reto (opcional) · Recuerda (opcional)</span>
       </p>
       <textarea id="sheet-input" rows="8"
         placeholder="Pega aquí el contenido copiado de Google Sheets…"
@@ -174,12 +174,16 @@ function parseSheetText(raw) {
 
     // ── Fila de rango (R1, R2, R3…): cols → R# | min | max | nombre | diagnóstico
     if (/^R\d+$/i.test(first)) {
-      rangos.push({
+      const rangoEntry = {
         nombre:      (cols[3] || '').trim() || first,
         min:         parseFloat(cols[1]) || 0,
         max:         parseFloat(cols[2]) || 0,
         diagnostico: (cols[4] || '').trim()
-      });
+      };
+      if ((cols[5] || '').trim()) rangoEntry.tu_realidad = cols[5].trim();
+      if ((cols[6] || '').trim()) rangoEntry.tu_reto     = cols[6].trim();
+      if ((cols[7] || '').trim()) rangoEntry.recuerda    = cols[7].trim();
+      rangos.push(rangoEntry);
       continue;
     }
 

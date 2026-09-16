@@ -2456,12 +2456,44 @@
                         <p class="text-xs text-slate-400">de ${ptMax} puntos máximos</p>
                     </div>
 
+                    <!-- Estadísticas del grupo -->
+                    ${(() => {
+                        const validSc = scores.filter(s => s.puntaje_total !== null && s.puntaje_total !== undefined);
+                        const ptBest  = validSc.length > 0 ? Math.max(...validSc.map(s => s.puntaje_total || 0)) : null;
+                        const ptAvg   = validSc.length > 0 ? Math.round(validSc.reduce((a,s) => a+(s.puntaje_total||0),0)/validSc.length*10)/10 : null;
+                        let grpMsg = '', grpColor = 'text-slate-300';
+                        if (pt !== null && ptBest !== null && pt === ptBest && validSc.filter(s=>(s.puntaje_total||0)===ptBest).length===1) { grpMsg='🏆 ¡Obtuviste el puntaje más alto del grupo!'; grpColor='text-amber-400'; }
+                        else if (ptAvg !== null && pt !== null && pt > ptAvg) { grpMsg='🌟 Tu puntaje está por encima del promedio.'; grpColor='text-emerald-400'; }
+                        else if (ptAvg !== null && pt !== null && Math.abs(pt-ptAvg)<0.5) { grpMsg='👍 Obtuviste el puntaje promedio del grupo.'; grpColor='text-indigo-300'; }
+                        else if (pt !== null) { grpMsg='📚 Tu puntaje está por debajo del promedio.'; grpColor='text-amber-300'; }
+                        return `<div class="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 space-y-2">
+                            <div class="flex justify-between">
+                                <div class="text-center flex-1">
+                                    <p class="text-xs text-slate-500 uppercase tracking-wider">Más alto</p>
+                                    <p class="text-xl font-extrabold text-amber-400">${ptBest !== null ? ptBest : '—'}</p>
+                                </div>
+                                <div class="text-center flex-1">
+                                    <p class="text-xs text-slate-500 uppercase tracking-wider">Promedio</p>
+                                    <p class="text-xl font-extrabold text-indigo-300">${ptAvg !== null ? ptAvg : '—'}</p>
+                                </div>
+                                <div class="text-center flex-1">
+                                    <p class="text-xs text-slate-500 uppercase tracking-wider">Participantes</p>
+                                    <p class="text-xl font-extrabold text-slate-300">${validSc.length}</p>
+                                </div>
+                            </div>
+                            ${grpMsg ? `<p class="text-xs text-center font-semibold ${grpColor}">${grpMsg}</p>` : ''}
+                        </div>`;
+                    })()}
+
                     <!-- Rango obtenido -->
                     ${rango ? `
                     <div class="bg-violet-950/60 border border-violet-600/50 rounded-2xl p-5 text-center shadow-xl space-y-1">
                         <p class="text-xs text-violet-300 uppercase tracking-wider font-semibold">Tu diagnóstico</p>
                         <p class="text-2xl font-extrabold text-violet-200">${rango.nombre}</p>
-                        ${rango.diagnostico ? `<p class="text-sm text-slate-300 mt-1">${rango.diagnostico}</p>` : ''}
+                        ${rango.diagnostico ? `<p class="text-sm text-slate-300 mt-2">${rango.diagnostico}</p>` : ''}
+                        ${rango.tu_realidad ? `<div class="text-left mt-3 p-3 bg-slate-800/60 rounded-xl border-l-4 border-violet-500"><p class="text-xs font-bold text-violet-400 uppercase mb-1">Tu realidad</p><p class="text-xs text-slate-300">${rango.tu_realidad}</p></div>` : ''}
+                        ${rango.tu_reto ? `<div class="text-left mt-2 p-3 bg-slate-800/60 rounded-xl border-l-4 border-amber-500"><p class="text-xs font-bold text-amber-400 uppercase mb-1">Tu reto</p><p class="text-xs text-slate-300">${rango.tu_reto}</p></div>` : ''}
+                        ${rango.recuerda ? `<div class="text-left mt-2 p-3 bg-slate-800/60 rounded-xl border-l-4 border-emerald-500"><p class="text-xs font-bold text-emerald-400 uppercase mb-1">Recuerda</p><p class="text-xs text-slate-300">${rango.recuerda}</p></div>` : ''}
                     </div>` : (pt !== null ? `
                     <div class="bg-amber-900/30 border border-amber-700/40 rounded-2xl p-4 text-center">
                         <p class="text-sm text-amber-300">Tu puntaje (${pt}) no coincide con ningún rango definido.</p>
@@ -2490,6 +2522,10 @@
                         }).join('')}
                     </div>
 
+                    <button onclick="printParticipantResult()"
+                        class="w-full py-3 bg-violet-700 hover:bg-violet-600 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-file-pdf"></i> Descargar mi resultado (PDF)
+                    </button>
                     <button onclick="resetApp()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">
                         Volver al inicio
                     </button>
@@ -2620,6 +2656,10 @@
                     </div>
                 </div>` : ''}
 
+                <button onclick="printParticipantResult()"
+                    class="w-full py-3 bg-violet-700 hover:bg-violet-600 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-file-pdf"></i> Descargar mi resultado (PDF)
+                </button>
                 <button onclick="resetApp()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">
                     Volver al inicio
                 </button>
@@ -2688,6 +2728,252 @@
     }
 
     function resetApp() { location.href = location.pathname; }
+
+    // ── DESCARGAR RESULTADO PDF ───────────────────────────────────────────────
+    function printParticipantResult() {
+        const { scores, avg, hasPonderada } = calculateScores();
+        const myScore  = scores.find(s => s.pid === participantId);
+        const questions = sessionData.questions || [];
+        const myVotes  = sessionData.participantVotes?.[participantId] || {};
+        const rangos   = sessionData.rangos || [];
+        const fecha    = new Date().toLocaleDateString('es-PE', { day:'2-digit', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit' });
+        const sesNombre = sessionData.name || 'Sesión';
+        const participanteLabel = (sessionData.participantNick || participantId || '');
+
+        // ── estilos comunes ────────────────────────────────────────────────
+        const baseCSS = `
+            @page { margin: 1.8cm 2cm; }
+            * { box-sizing: border-box; }
+            body { font-family: 'Segoe UI', Arial, sans-serif; color: #111827; max-width: 760px; margin: 0 auto; padding: 24px; font-size: 13px; }
+            .header { text-align: center; padding-bottom: 16px; margin-bottom: 20px; border-bottom: 3px solid #7c3aed; }
+            .brand { font-size: 11px; font-weight: 800; color: #7c3aed; letter-spacing: 3px; text-transform: uppercase; }
+            .sesion-name { font-size: 20px; font-weight: 900; color: #111827; margin: 6px 0 2px; }
+            .participante { font-size: 13px; color: #6b7280; }
+            .score-box { background: #f5f3ff; border: 2px solid #7c3aed; border-radius: 14px; padding: 20px; text-align: center; margin: 16px 0; }
+            .score-num { font-size: 60px; font-weight: 900; color: #6d28d9; line-height: 1; }
+            .score-sub { font-size: 12px; color: #6b7280; margin-top: 4px; }
+            .nota-box { background: #f5f3ff; border: 2px solid #7c3aed; border-radius: 14px; padding: 20px; text-align: center; margin: 16px 0; }
+            .nota-num { font-size: 60px; font-weight: 900; line-height: 1; }
+            .nota-sub { font-size: 12px; color: #6b7280; margin-top: 4px; }
+            .nota-verde { color: #059669; }
+            .nota-ambar { color: #d97706; }
+            .nota-roja  { color: #dc2626; }
+            .stats-row { display: flex; gap: 12px; margin: 12px 0; }
+            .stat-card { flex: 1; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; text-align: center; }
+            .stat-val { font-size: 22px; font-weight: 800; color: #374151; }
+            .stat-lbl { font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+            .msg-box { background: #fffbeb; border: 1px solid #f59e0b; border-radius: 10px; padding: 12px; text-align: center; font-weight: 600; color: #92400e; margin: 12px 0; font-size: 13px; }
+            .diag-box { background: #f5f3ff; border: 2px solid #7c3aed; border-radius: 14px; padding: 18px; margin: 14px 0; }
+            .diag-label { font-size: 10px; color: #7c3aed; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 800; margin-bottom: 4px; }
+            .diag-nombre { font-size: 20px; font-weight: 900; color: #4c1d95; margin-bottom: 8px; }
+            .diag-text { color: #374151; font-size: 13px; line-height: 1.6; }
+            .field-box { border-left: 4px solid #7c3aed; background: #fafafa; border-radius: 0 8px 8px 0; padding: 10px 14px; margin: 10px 0; }
+            .field-label { font-size: 10px; font-weight: 800; color: #7c3aed; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px; }
+            .field-text { color: #374151; font-size: 13px; line-height: 1.5; }
+            .section-title { font-size: 10px; font-weight: 800; color: #6b7280; text-transform: uppercase; letter-spacing: 1.5px; margin: 20px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #e5e7eb; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0; }
+            th { background: #6d28d9; color: white; padding: 7px 10px; text-align: left; font-size: 11px; }
+            td { padding: 7px 10px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+            tr:nth-child(even) td { background: #fafafa; }
+            .pts-cell { text-align: center; font-weight: 700; color: #6d28d9; }
+            .ok-cell { text-align: center; }
+            .footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid #e5e7eb; display: flex; justify-content: space-between; font-size: 10px; color: #9ca3af; }
+            .print-btn { display: block; margin: 20px auto 0; padding: 10px 28px; background: #7c3aed; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+            @media print { .print-btn { display: none !important; } }
+        `;
+
+        let bodyHTML = '';
+
+        if (hasPonderada) {
+            const pt    = myScore?.puntaje_total ?? 0;
+            const rango = myScore?.rango || null;
+            const ptMax = rangos.length > 0 ? Math.max(...rangos.map(r => r.max)) : '?';
+            const validScores = scores.filter(s => s.puntaje_total !== null && s.puntaje_total !== undefined);
+            const ptBest = validScores.length > 0 ? Math.max(...validScores.map(s => s.puntaje_total || 0)) : null;
+            const ptAvg  = validScores.length > 0
+                ? Math.round(validScores.reduce((a, s) => a + (s.puntaje_total || 0), 0) / validScores.length * 10) / 10 : null;
+
+            let msg = '';
+            if (ptBest !== null && pt === ptBest && validScores.filter(s => (s.puntaje_total||0) === ptBest).length === 1) {
+                msg = '🏆 ¡Obtuviste el puntaje más alto del grupo!';
+            } else if (ptAvg !== null && pt > ptAvg) {
+                msg = '🌟 Tu puntaje está por encima del promedio del grupo.';
+            } else if (ptAvg !== null && Math.abs(pt - ptAvg) < 0.5) {
+                msg = '👍 Obtuviste el puntaje promedio del grupo.';
+            } else if (ptBest !== null && pt === ptBest && validScores.filter(s => (s.puntaje_total||0) === ptBest).length > 1) {
+                msg = '🏆 ¡Estás entre los que obtuvieron el puntaje más alto!';
+            } else {
+                msg = '📚 Tu puntaje está por debajo del promedio del grupo.';
+            }
+
+            // Revisión de respuestas PONDERADA
+            const qRows = questions.map((q, idx) => {
+                if ((q.tipo || '') !== 'ponderada') return '';
+                const myVote = myVotes[String(idx)] || null;
+                const pts    = myVote ? (q['puntaje' + myVote] || 0) : 0;
+                const optTxt = myVote ? `${myVote}: ${q['opcion' + myVote] || ''}` : '—';
+                return `<tr>
+                    <td>${idx+1}. ${q.pregunta}</td>
+                    <td>${optTxt}</td>
+                    <td class="pts-cell">${myVote ? pts : '—'}</td>
+                </tr>`;
+            }).join('');
+
+            bodyHTML = `
+            <div class="header">
+                <div class="brand">IntelliPOS Quiz</div>
+                <div class="sesion-name">${sesNombre}</div>
+                <div class="participante">${participanteLabel}</div>
+            </div>
+
+            <div class="score-box">
+                <div class="diag-label">Tu puntaje total</div>
+                <div class="score-num">${pt}</div>
+                <div class="score-sub">de ${ptMax} puntos máximos</div>
+            </div>
+
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-val">${ptBest !== null ? ptBest : '—'}</div>
+                    <div class="stat-lbl">Puntaje más alto</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-val">${ptAvg !== null ? ptAvg : '—'}</div>
+                    <div class="stat-lbl">Promedio del grupo</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-val">${validScores.length}</div>
+                    <div class="stat-lbl">Participantes</div>
+                </div>
+            </div>
+
+            <div class="msg-box">${msg}</div>
+
+            ${rango ? `
+            <div class="diag-box">
+                <div class="diag-label">Tu diagnóstico</div>
+                <div class="diag-nombre">${rango.nombre}</div>
+                ${rango.diagnostico ? `<div class="diag-text">${rango.diagnostico}</div>` : ''}
+                ${rango.tu_realidad ? `<div class="field-box" style="margin-top:12px"><div class="field-label">Tu realidad</div><div class="field-text">${rango.tu_realidad}</div></div>` : ''}
+                ${rango.tu_reto ? `<div class="field-box"><div class="field-label">Tu reto</div><div class="field-text">${rango.tu_reto}</div></div>` : ''}
+                ${rango.recuerda ? `<div class="field-box"><div class="field-label">Recuerda</div><div class="field-text">${rango.recuerda}</div></div>` : ''}
+            </div>` : ''}
+
+            <div class="section-title">Detalle de respuestas</div>
+            <table>
+                <thead><tr>
+                    <th style="width:60%">Pregunta</th>
+                    <th>Tu respuesta</th>
+                    <th style="width:70px;text-align:center">Pts</th>
+                </tr></thead>
+                <tbody>${qRows}</tbody>
+            </table>
+
+            <div class="footer">
+                <span>IntelliPOS Quiz · ${sesNombre}</span>
+                <span>${fecha}</span>
+            </div>
+            <button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>`;
+
+        } else {
+            // ── MC ──────────────────────────────────────────────────────────
+            const nota     = myScore?.nota ?? null;
+            const correct  = myScore?.correct ?? 0;
+            const total    = myScore?.total ?? 0;
+            const bestNota = scores.filter(s => s.nota !== null).length > 0
+                ? Math.max(...scores.filter(s => s.nota !== null).map(s => s.nota)) : null;
+            const notaColor = nota === null ? 'nota-roja'
+                : nota >= 14 ? 'nota-verde' : nota >= 11 ? 'nota-ambar' : 'nota-roja';
+
+            let msg = '';
+            if (nota === null) {
+                msg = '⏳ Tu nota final se calculará cuando el profesor califique las preguntas abiertas.';
+            } else if (bestNota !== null && nota === bestNota && scores.filter(s => s.nota === bestNota).length === 1) {
+                msg = '🏆 ¡Felicitaciones! ¡Obtuviste la mejor nota del salón!';
+            } else if (avg !== null && nota > avg) {
+                msg = '🌟 ¡Felicitaciones! Tu nota está por encima del promedio del salón.';
+            } else if (avg !== null && Math.abs(nota - avg) < 0.05) {
+                msg = '👍 Obtuviste exactamente la nota promedio del salón.';
+            } else {
+                msg = '📚 Tu nota está por debajo del promedio. ¡No te desanimes!';
+            }
+
+            const qRows = questions.map((q, idx) => {
+                const esAb   = (q.tipo || 'multiple_choice') === 'abierta';
+                const myVote = myVotes[String(idx)] || null;
+                if (esAb) {
+                    const ans = myVote && String(myVote).trim() ? String(myVote).substring(0, 120) : '—';
+                    return `<tr>
+                        <td>📝 ${idx+1}. ${q.pregunta}</td>
+                        <td colspan="2" style="font-style:italic;color:#6b7280">${ans}<br><span style="color:#d97706;font-size:11px">Pendiente de calificación</span></td>
+                    </tr>`;
+                }
+                const isOk = myVote === q.correcta;
+                const icon = !myVote ? '⬜' : isOk ? '✅' : '❌';
+                const myOptTxt = myVote ? `${myVote}: ${q['opcion' + myVote] || ''}` : '—';
+                const corrTxt  = `${q.correcta}: ${q['opcion' + q.correcta] || ''}`;
+                return `<tr>
+                    <td>${icon} ${idx+1}. ${q.pregunta}</td>
+                    <td>${myOptTxt}${!isOk && myVote ? `<br><span style="color:#059669;font-size:11px">✓ ${corrTxt}</span>` : ''}</td>
+                    <td class="ok-cell">${!myVote ? '—' : isOk ? '✅' : '❌'}</td>
+                </tr>`;
+            }).join('');
+
+            bodyHTML = `
+            <div class="header">
+                <div class="brand">IntelliPOS Quiz</div>
+                <div class="sesion-name">${sesNombre}</div>
+                <div class="participante">${participanteLabel}</div>
+            </div>
+
+            <div class="nota-box">
+                <div class="diag-label">Tu calificación</div>
+                <div class="nota-num ${notaColor}">${nota !== null ? nota.toFixed(1) : '—'}</div>
+                <div class="score-sub">${correct} de ${total} correctas · escala 0–20</div>
+            </div>
+
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-val">${bestNota !== null ? bestNota.toFixed(1) : '—'}</div>
+                    <div class="stat-lbl">Mejor nota</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-val">${avg !== null ? avg.toFixed(1) : '—'}</div>
+                    <div class="stat-lbl">Promedio del salón</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-val">${scores.length}</div>
+                    <div class="stat-lbl">Participantes</div>
+                </div>
+            </div>
+
+            <div class="msg-box">${msg}</div>
+
+            <div class="section-title">Detalle de respuestas</div>
+            <table>
+                <thead><tr>
+                    <th style="width:55%">Pregunta</th>
+                    <th>Tu respuesta / Correcta</th>
+                    <th style="width:50px;text-align:center">Res.</th>
+                </tr></thead>
+                <tbody>${qRows}</tbody>
+            </table>
+
+            <div class="footer">
+                <span>IntelliPOS Quiz · ${sesNombre}</span>
+                <span>${fecha}</span>
+            </div>
+            <button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>`;
+        }
+
+        const win = window.open('', '_blank', 'width=900,height=700');
+        if (!win) { alert('Permite ventanas emergentes para descargar tu resultado.'); return; }
+        win.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+            <title>Resultado – ${sesNombre}</title>
+            <style>${baseCSS}</style></head><body>${bodyHTML}</body></html>`);
+        win.document.close();
+        setTimeout(() => win.print(), 600);
+    }
 
     // ── GRÁFICO ───────────────────────────────────────────────────────────────
     function initChart() {
