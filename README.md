@@ -1,100 +1,134 @@
-# IntelliPOS Interactive 2.0 — v2
+# IntelliPOS Quiz 2.0
 
-Plataforma de cuestionarios y exámenes en tiempo real, similar a Mentimeter. Incluye biblioteca de cuestionarios con soporte de imágenes.
+Plataforma de cuestionarios y exámenes en tiempo real. El presentador lanza sesiones en vivo; los participantes responden desde cualquier dispositivo con navegador.
 
-## Aplicaciones
+## URLs
 
-### 1. App principal — Sesión en Vivo
-**URL:** `https://mentimeter-intellipos.vercel.app`
+| App | URL |
+|-----|-----|
+| App principal (sesiones en vivo) | https://intellipos-quiz-app.vercel.app |
+| Preparación de cuestionarios | https://intellipos-quiz-app.vercel.app/quiz-prep.html |
+| Preparación de listas de participantes | https://intellipos-quiz-app.vercel.app/student-list-prep.html |
 
-El presentador selecciona un cuestionario de la biblioteca y lanza una sesión en vivo. Los participantes se unen con un código o QR desde cualquier dispositivo.
+## Flujo de trabajo
 
-### 2. App de preparación — Biblioteca de Cuestionarios
-**URL:** `https://mentimeter-intellipos.vercel.app/quiz-prep.html`
+### Preparación (antes de la sesión)
 
-Permite crear y gestionar cuestionarios con anticipación. Soporta carga de imágenes por pregunta almacenadas en Supabase Storage.
-
-## Flujo de trabajo recomendado
-
-### Preparación (días antes de la sesión)
-1. Abre la app de preparación (`/quiz-prep.html`)
-2. Haz clic en **"+ Nuevo cuestionario"**
-3. Escribe un nombre para el cuestionario
-4. Pega las preguntas desde Google Sheets
-5. Haz clic en **"Previsualizar preguntas"**
-6. Sube imágenes para cada pregunta (opcional)
-7. Haz clic en **"Guardar cuestionario"** — queda guardado en la biblioteca
+1. **Cuestionario** — Abre `/quiz-prep.html`, crea un nuevo cuestionario pegando el TSV desde Google Sheets, previsualiza y guarda en la biblioteca.
+2. **Lista de participantes** — Abre `/student-list-prep.html`, pega el padrón (Código · Apellido Paterno · Apellido Materno · Nombres) y guarda la lista.
 
 ### El día de la sesión
-1. Abre la app principal
-2. En "Biblioteca de cuestionarios", selecciona el cuestionario preparado
-3. Haz clic en **"Usar"**
-4. Escribe el nombre de la sesión y elige la modalidad (Cuestionario o Examen)
-5. Haz clic en **"Crear Sesión en Vivo"**
-6. Comparte el código QR o el link con los participantes
 
-## Formato de preguntas (Google Sheets)
+1. Abre la app principal e inicia sesión.
+2. Selecciona el cuestionario y la lista de participantes.
+3. Elige modalidad (Cuestionario interactivo o Examen individual) y tipo de acceso (Abierta o Cerrada).
+4. Crea la sesión y comparte el código QR o el enlace con los participantes.
+5. Al finalizar, los resultados quedan registrados en Supabase y disponibles en **Historial**.
 
-Copia y pega las celdas directamente desde Google Sheets. El formato esperado es de **6 columnas obligatorias**:
+---
 
-| Columna | Contenido | Obligatoria |
-|---------|-----------|-------------|
-| 1 | Texto de la pregunta | ✅ |
-| 2 | Opción A | ✅ |
-| 3 | Opción B | ✅ |
-| 4 | Opción C | ✅ |
-| 5 | Opción D | ✅ |
-| 6 | Letra de la respuesta correcta (A, B, C o D) | ✅ |
+## Tipos de cuestionario
 
-La fila de encabezado es ignorada automáticamente si la primera celda contiene la palabra "Pregunta" o "Question".
+### Opción múltiple (MC)
+Formato TSV estándar de 6 columnas:
 
-### Ejemplo
+| Col | Contenido |
+|-----|-----------|
+| 1 | Texto de la pregunta |
+| 2–5 | Opciones A, B, C, D |
+| 6 | Letra correcta (A, B, C o D) |
+
+### PONDERADA (diagnóstico ponderado)
+Cada opción suma puntos propios; el total se mapea a un rango diagnóstico. No genera nota 0–20.
+
+| Col | Contenido |
+|-----|-----------|
+| 1 | Texto de la pregunta |
+| 2–5 | Opciones A, B, C, D |
+| 6 | `PONDERADA` (literal) |
+| 7–10 | (vacías) |
+| 11–14 | Puntaje de cada opción: PtjA · PtjB · PtjC · PtjD |
+
+Al final de las preguntas, agrega filas de rango:
 
 ```
-Pregunta	Opción A	Opción B	Opción C	Opción D	Correcta
-¿Cuál es la capital de Francia?	Madrid	París	Roma	Berlín	B
-¿Cuántos lados tiene un triángulo?	2	3	4	5	B
+R1	52	60	Muy alta resiliencia	Descripción del diagnóstico	Tu realidad (opcional)	Tu reto (opcional)	Recuerda (opcional)
+R2	42	51	Alta resiliencia	...
 ```
 
-> Las imágenes se suben directamente desde la app de preparación — no se necesita ninguna columna adicional en Google Sheets.
+### Pregunta abierta
+Pon `ABIERTA` en la columna 6; las opciones se ignoran. Requiere calificación manual por el presentador.
 
-## Imágenes en preguntas
+---
 
-Las imágenes se almacenan en **Supabase Storage** (bucket `quiz-images`, público). Se suben desde la app de preparación, una por pregunta. No es necesario modificar el archivo de Google Sheets.
+## Lista de participantes
+
+Formato TSV de 4 columnas:
+
+| Col | Contenido |
+|-----|-----------|
+| 1 | Código de alumno (ej: A00123) |
+| 2 | Apellido Paterno |
+| 3 | Apellido Materno |
+| 4 | Nombres |
+
+El identificador se genera automáticamente: `Inicial.ApellidoPaterno.InicialMaterno` (ej: R.Urteaga.M).
+
+---
 
 ## Funcionalidades
 
-- Cuestionarios en vivo con resultados en tiempo real
-- Modo examen con orden aleatorio de preguntas (anti-copia)
-- Biblioteca de cuestionarios guardados con imágenes
-- App separada para preparación de cuestionarios con anticipación
-- Login con autenticación Supabase Auth
-- Control de acceso por lista de usuarios autorizados
-- Participantes identificados por nickname
-- Imágenes por pregunta almacenadas en Supabase Storage
+- **Cuestionario interactivo**: el presentador controla el ritmo, resultados en tiempo real por pregunta.
+- **Examen individual**: cada participante responde a su propio ritmo con cronómetro.
+- **Tipo PONDERADA**: cuestionario diagnóstico con puntaje ponderado por opción y rangos con diagnóstico, "tu realidad", "tu reto" y "recuerda".
+- **Preguntas abiertas**: el participante escribe texto libre; el presentador califica manualmente.
+- **Sesión cerrada**: acceso restringido a participantes de la lista, validados por código de alumno.
+- **Registro de resultados**: al finalizar la sesión se graban los resultados individuales en `session_results`.
+- **Historial de sesiones**: el presentador puede revisar resultados de sesiones pasadas, filtrar por cuestionario y ver el detalle por participante.
+- **Descarga PDF**: el participante puede descargar su resultado al finalizar (puntaje, estadísticas del grupo, diagnóstico, detalle de respuestas).
+- **Imágenes por pregunta**: almacenadas en Supabase Storage (bucket `quiz-images`, público).
+- **Login con Supabase Auth**: solo presentadores registrados en `authorized_users` pueden acceder.
+
+---
 
 ## Stack
 
-- HTML/CSS/JS (single file por app)
-- Supabase (base de datos + autenticación + realtime + storage)
-- Tailwind CSS (via CDN)
+- HTML / CSS / JavaScript (single file por app, sin framework)
+- Supabase — PostgreSQL + Auth + Realtime + Storage
+- Tailwind CSS (CDN)
 - Vercel (hosting)
+- GitHub — rama activa: `v2-dev`
 
-## Ramas
-
-- `main` → versión quiz-only (sin login, sin exámenes)
-- `v2` → versión estable anterior (quiz + examen + login + imágenes por URL)
-- `v2-dev` → versión activa (quiz + examen + login + biblioteca de cuestionarios + imágenes en Supabase Storage)
+---
 
 ## Base de datos Supabase
 
-### Tablas
-- `quiz_session` — sesiones en vivo activas
-- `quizzes` — biblioteca de cuestionarios guardados
+| Tabla | Descripción | Campos clave |
+|-------|-------------|--------------|
+| `quiz_session` | Sesiones en vivo activas | `id`, `data` (jsonb) |
+| `quizzes` | Biblioteca de cuestionarios | `id`, `nombre`, `preguntas` (jsonb), `tipo`, `rangos` (jsonb) |
+| `participant_lists` | Listas de participantes | `id`, `nombre`, `lista` (jsonb) |
+| `session_results` | Resultados individuales por sesión | `quiz_session_id`, `quiz_id`, `participante_codigo`, `respuestas` (jsonb), `puntaje_obtenido`, `puntaje_posible`, `nota` (MC), `puntaje_total` (PONDERADA), `rango_obtenido` (jsonb) |
+| `authorized_users` | Presentadores autorizados | `email`, `activo`, `nombre` |
 
-### Storage
-- Bucket `quiz-images` (público) — imágenes de preguntas
+Storage: bucket `quiz-images` (público).
 
-## Requisitos
+---
 
-Necesitas estar registrado como usuario autorizado en Supabase para acceder a la app principal.
+## Ramas Git
+
+| Rama | Estado | Descripción |
+|------|--------|-------------|
+| `main` | Estable | Versión quiz-only sin login |
+| `v2` | Estable | Quiz + examen + login + imágenes por URL |
+| `v2-dev` | Activa | Versión completa: biblioteca, listas, PONDERADA, historial, PDF |
+
+---
+
+## Deploy
+
+```bash
+node ~/proyectos/mentimeter1/deploy-vercel-device.js
+```
+
+El script usa la API REST de Vercel directamente (no requiere CLI). Subir archivos y crear el deployment de producción tarda ~30 segundos.
