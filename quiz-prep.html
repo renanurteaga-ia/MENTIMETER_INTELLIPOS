@@ -87,10 +87,12 @@
         Preguntas <span class="text-slate-500 font-normal">(pega desde Google Sheets)</span>
       </label>
       <p class="text-xs text-slate-500">
-        Columnas: Pregunta · Opción A · B · C · D · Correcta · (URL imagen opcional) · (Puntaje opcional)<br>
+        Columnas: Pregunta · Opción A · B · C · D · Correcta/Tipo · URL imagen · Puntaje · Sesión · Tópico · PtjA · PtjB · PtjC · PtjD<br>
         Para una <span class="text-amber-400 font-semibold">pregunta abierta</span>, pon
-        <span class="font-mono text-amber-400">ABIERTA</span> en la columna Correcta (las opciones se ignoran).<br>
-        El <span class="text-indigo-300 font-semibold">Puntaje</span> (columna 8) es opcional — si se omite, vale <span class="font-mono text-indigo-300">1</span> punto.
+        <span class="font-mono text-amber-400">ABIERTA</span> en col 6 (las opciones se ignoran).<br>
+        Para una <span class="text-violet-400 font-semibold">pregunta ponderada</span>, pon
+        <span class="font-mono text-violet-400">PONDERADA</span> en col 6 y los pesos de cada opción en las cols 11-14 (PtjA…PtjD).<br>
+        Al final de las preguntas, agrega filas de rango: <span class="font-mono text-emerald-400">R1 · min · max · Nombre del rango · Diagnóstico</span>
       </p>
       <textarea id="sheet-input" rows="8"
         placeholder="Pega aquí el contenido copiado de Google Sheets…"
@@ -152,8 +154,10 @@ const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let parsedQuestions = [];
-let editingQuizId = null;
-let deleteTargetId = null;
+let parsedRangos    = [];   // rangos diagnósticos para cuestionarios PONDERADA
+let editingQuizId   = null;
+let deleteTargetId  = null;
+let quizMap         = {};   // id → quiz completo, para evitar problemas con comillas en onclick
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -161,30 +165,58 @@ const $ = id => document.getElementById(id);
 function parseSheetText(raw) {
   const lines = raw.trim().split('\n').filter(l => l.trim());
   const result = [];
+  const rangos  = [];
   for (const line of lines) {
     const cols = line.split('\t');
     if (cols.length < 1) continue;
-    const first = cols[0].trim().toLowerCase();
-    if (first === 'pregunta' || first === 'question') continue;
+    const first = cols[0].trim();
+    if (first.toLowerCase() === 'pregunta' || first.toLowerCase() === 'question') continue;
+
+    // ── Fila de rango (R1, R2, R3…): cols → R# | min | max | nombre | diagnóstico
+    if (/^R\d+$/i.test(first)) {
+      rangos.push({
+        nombre:      (cols[3] || '').trim() || first,
+        min:         parseFloat(cols[1]) || 0,
+        max:         parseFloat(cols[2]) || 0,
+        diagnostico: (cols[4] || '').trim()
+      });
+      continue;
+    }
 
     const tipoRaw    = (cols[5] || '').trim().toUpperCase();
     const puntajeRaw = parseFloat((cols[7] || '').trim());
     const puntaje    = (!isNaN(puntajeRaw) && puntajeRaw > 0) ? puntajeRaw : 1;
 
     if (tipoRaw === 'ABIERTA') {
-      // Pregunta de texto libre — no necesita opciones
       result.push({
-        pregunta: cols[0].trim(),
+        pregunta: first,
         opcionA: '', opcionB: '', opcionC: '', opcionD: '',
         correcta: '',
         tipo:     'abierta',
         imageUrl: (cols[6] || '').trim(),
         puntaje
       });
+    } else if (tipoRaw === 'PONDERADA') {
+      // Pregunta ponderada: pesos por opción en cols 10-13 (PtjA…PtjD)
+      result.push({
+        pregunta: first,
+        opcionA:  (cols[1]||'').trim(),
+        opcionB:  (cols[2]||'').trim(),
+        opcionC:  (cols[3]||'').trim(),
+        opcionD:  (cols[4]||'').trim(),
+        correcta: null,
+        tipo:     'ponderada',
+        imageUrl: (cols[6] || '').trim(),
+        puntajeA: parseFloat(cols[10]) || 0,
+        puntajeB: parseFloat(cols[11]) || 0,
+        puntajeC: parseFloat(cols[12]) || 0,
+        puntajeD: parseFloat(cols[13]) || 0,
+        puntaje
+      });
     } else {
       if (cols.length < 6) continue;
       result.push({
-        pregunta: cols[0].trim(),
+        pregunta: first,
         opcionA:  (cols[1]||'').trim(),
         opcionB:  (cols[2]||'').trim(),
         opcionC:  (cols[3]||'').trim(),
@@ -196,6 +228,7 @@ function parseSheetText(raw) {
       });
     }
   }
+  parsedRangos = rangos;
   return result;
 }
 
@@ -204,7 +237,8 @@ function showLibraryView() {
   $('view-library').classList.remove('hidden');
   $('view-create').classList.add('hidden');
   parsedQuestions = [];
-  editingQuizId = null;
+  parsedRangos    = [];
+  editingQuizId   = null;
   loadLibrary();
 }
 
@@ -229,14 +263,24 @@ function showCreateView(quiz = null) {
     $('create-title').textContent = 'Editar cuestionario';
     $('save-btn-label').textContent = 'Guardar cambios';
     parsedQuestions = quiz.preguntas;
+    parsedRangos    = quiz.rangos || [];
     renderImageList();
     $('image-panel').classList.remove('hidden');
     // populate textarea for reference
-    const tsv = parsedQuestions.map(q =>
-      q.tipo === 'abierta'
-        ? [q.pregunta, '', '', '', '', 'ABIERTA', q.imageUrl||'', q.puntaje||1].join('\t')
-        : [q.pregunta, q.opcionA, q.opcionB, q.opcionC, q.opcionD, q.correcta, q.imageUrl||'', q.puntaje||1].join('\t')
-    ).join('\n');
+    const tsv = [
+      ...parsedQuestions.map(q => {
+        if (q.tipo === 'abierta')
+          return [q.pregunta, '', '', '', '', 'ABIERTA', q.imageUrl||'', q.puntaje||1].join('\t');
+        if (q.tipo === 'ponderada')
+          return [q.pregunta, q.opcionA, q.opcionB, q.opcionC, q.opcionD, 'PONDERADA',
+                  q.imageUrl||'', q.puntaje||1, '', '',
+                  q.puntajeA||0, q.puntajeB||0, q.puntajeC||0, q.puntajeD||0].join('\t');
+        return [q.pregunta, q.opcionA, q.opcionB, q.opcionC, q.opcionD, q.correcta, q.imageUrl||'', q.puntaje||1].join('\t');
+      }),
+      ...parsedRangos.map((r, i) =>
+        [`R${i+1}`, r.min, r.max, r.nombre, r.diagnostico||''].join('\t')
+      )
+    ].join('\n');
     $('sheet-input').value = tsv;
   }
 }
@@ -247,7 +291,7 @@ async function loadLibrary() {
   $('lib-empty').classList.add('hidden');
   $('lib-list').classList.add('hidden');
 
-  const { data, error } = await sb.from('quizzes').select('id, nombre, creado_en, preguntas').order('creado_en', { ascending: false });
+  const { data, error } = await sb.from('quizzes').select('id, nombre, creado_en, preguntas, rangos').order('creado_en', { ascending: false });
 
   $('lib-loading').classList.add('hidden');
 
@@ -264,11 +308,16 @@ async function loadLibrary() {
   }
 
   $('lib-list').classList.remove('hidden');
+  // Guardar en mapa para acceso seguro (evita problema con comillas en onclick)
+  quizMap = {};
+  data.forEach(q => { quizMap[q.id] = q; });
+
   $('lib-list').innerHTML = data.map(q => {
     const nPreguntas = Array.isArray(q.preguntas) ? q.preguntas.length : 0;
     const nImgs = Array.isArray(q.preguntas) ? q.preguntas.filter(p => p.imageUrl).length : 0;
     const fecha = new Date(q.creado_en).toLocaleDateString('es', { day:'2-digit', month:'short', year:'numeric' });
     const firstImg = Array.isArray(q.preguntas) ? q.preguntas.find(p => p.imageUrl) : null;
+    const nombreEsc = q.nombre.replace(/'/g, "\\'");
 
     return `
     <div class="quiz-card glass rounded-2xl border border-slate-700/50 p-4 flex items-center gap-4 transition-colors fade-in">
@@ -285,11 +334,11 @@ async function loadLibrary() {
         </p>
       </div>
       <div class="flex items-center gap-2 flex-shrink-0">
-        <button onclick='editQuiz(${JSON.stringify(q)})' title="Editar"
+        <button onclick="editQuiz('${q.id}')" title="Editar"
           class="w-9 h-9 rounded-xl bg-slate-700 hover:bg-indigo-600 flex items-center justify-center transition-colors text-sm">
           <i class="fa-solid fa-pen"></i>
         </button>
-        <button onclick="promptDelete('${q.id}','${q.nombre.replace(/'/g,"\\'")}'')" title="Eliminar"
+        <button onclick="promptDelete('${q.id}','${nombreEsc}')" title="Eliminar"
           class="w-9 h-9 rounded-xl bg-slate-700 hover:bg-red-600 flex items-center justify-center transition-colors text-sm">
           <i class="fa-solid fa-trash"></i>
         </button>
@@ -315,15 +364,40 @@ function renderImageList() {
   const withImg = parsedQuestions.filter(q => q.imageUrl).length;
   $('img-count').textContent = `${parsedQuestions.length} preguntas · ${withImg} con imagen`;
 
+  // Mostrar resumen de rangos si hay cuestionario ponderada
+  const hasPond = parsedQuestions.some(q => q.tipo === 'ponderada');
+  if (hasPond && parsedRangos.length > 0) {
+    const rangosHtml = parsedRangos.map(r =>
+      `<div class="flex gap-2 text-xs text-slate-300 py-0.5">
+        <span class="font-semibold text-violet-300">${r.nombre}</span>
+        <span class="text-slate-500">${r.min}–${r.max} pts</span>
+        ${r.diagnostico ? `<span class="text-slate-500 italic truncate">${r.diagnostico}</span>` : ''}
+       </div>`
+    ).join('');
+    const existing = $('rangos-preview');
+    if (!existing) {
+      const div = document.createElement('div');
+      div.id = 'rangos-preview';
+      div.className = 'bg-violet-950/40 border border-violet-700/40 rounded-xl p-3 space-y-1';
+      div.innerHTML = `<p class="text-xs font-semibold text-violet-300 uppercase tracking-wider mb-2"><i class="fa-solid fa-chart-bar mr-1"></i>Rangos diagnósticos (${parsedRangos.length})</p>${rangosHtml}`;
+      $('image-list').parentElement.insertBefore(div, $('image-list'));
+    }
+  }
+
   $('image-list').innerHTML = parsedQuestions.map((q, i) => {
-    const esAbierta = q.tipo === 'abierta';
+    const esAbierta  = q.tipo === 'abierta';
+    const esPond     = q.tipo === 'ponderada';
     return `
-    <div class="bg-slate-900 rounded-xl p-3 space-y-2 border ${esAbierta ? 'border-amber-700/40' : 'border-slate-700/40'}">
+    <div class="bg-slate-900 rounded-xl p-3 space-y-2 border ${esAbierta ? 'border-amber-700/40' : esPond ? 'border-violet-700/40' : 'border-slate-700/40'}">
       <div class="flex items-center gap-2">
         <p class="text-sm font-semibold text-white leading-snug flex-1">${i + 1}. ${q.pregunta}</p>
         ${esAbierta
           ? `<span class="shrink-0 text-xs px-2 py-0.5 rounded-full bg-amber-900/50 border border-amber-700/60 text-amber-300 font-semibold">
                <i class="fa-solid fa-pen-to-square mr-1"></i>Abierta
+             </span>`
+          : esPond
+          ? `<span class="shrink-0 text-xs px-2 py-0.5 rounded-full bg-violet-900/50 border border-violet-700/60 text-violet-300 font-semibold">
+               <i class="fa-solid fa-chart-bar mr-1"></i>Ponderada A:${q.puntajeA||0} B:${q.puntajeB||0} C:${q.puntajeC||0} D:${q.puntajeD||0}
              </span>`
           : `<span class="shrink-0 text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 border border-indigo-700/40 text-indigo-300">
                ✓ ${q.correcta}
@@ -391,10 +465,10 @@ async function saveQuiz() {
 
   try {
     if (editingQuizId) {
-      const { error } = await sb.from('quizzes').update({ nombre, preguntas: parsedQuestions }).eq('id', editingQuizId);
+      const { error } = await sb.from('quizzes').update({ nombre, preguntas: parsedQuestions, rangos: parsedRangos }).eq('id', editingQuizId);
       if (error) throw error;
     } else {
-      const { error } = await sb.from('quizzes').insert({ nombre, preguntas: parsedQuestions });
+      const { error } = await sb.from('quizzes').insert({ nombre, preguntas: parsedQuestions, rangos: parsedRangos });
       if (error) throw error;
     }
     $('save-status').innerHTML = '<i class="fa-solid fa-check-circle text-emerald-400"></i> <span class="text-emerald-400">¡Guardado correctamente!</span>';
@@ -407,7 +481,9 @@ async function saveQuiz() {
 }
 
 // ── Edit ──────────────────────────────────────────────────────────────────────
-function editQuiz(quiz) {
+function editQuiz(id) {
+  const quiz = quizMap[id];
+  if (!quiz) { alert('No se encontró el cuestionario.'); return; }
   showCreateView(quiz);
 }
 
