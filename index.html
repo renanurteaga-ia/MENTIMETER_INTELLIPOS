@@ -2164,9 +2164,6 @@
         const esAbierta = (q.tipo || 'multiple_choice') === 'abierta';
         const esNivel   = (q.tipo || 'multiple_choice') === 'nivel_rango';
         const selected  = examAnswers[origIdx];
-        // DEBUG TEMPORAL — muestra el tipo detectado en pantalla
-        console.log('[EXAM-DEBUG] origIdx='+origIdx+' tipo='+q.tipo+' dimension='+q.dimension+' opcionA='+q.opcionA+' esNivel='+esNivel);
-        $('exam-options-container').innerHTML = `<p style="color:#facc15;font-size:11px;margin-bottom:6px">DEBUG tipo="${q.tipo||'undefined'}" dim="${q.dimension||'none'}" opA="${q.opcionA||'empty'}" esNivel=${esNivel}</p>`;
 
         if (esAbierta) {
             // Textarea para pregunta abierta
@@ -2216,6 +2213,12 @@
                 </button>`;
             }).join('');
         }
+
+        // DEBUG TEMPORAL — aparece DESPUÉS del branch, así no se sobreescribe
+        const dbg = document.createElement('p');
+        dbg.style.cssText = 'color:#facc15;font-size:10px;margin-top:6px;opacity:0.8';
+        dbg.textContent = `[DBG] tipo="${q.tipo||'?'}" dim="${q.dimension||'-'}" opA="${q.opcionA===undefined?'undef':q.opcionA||'empty'}" esNivel=${esNivel} esAb=${esAbierta}`;
+        $('exam-options-container').appendChild(dbg);
 
         // Actualizar indicadores de puntos
         $('exam-dot-nav').innerHTML = examOrder.map((oi, pos) => {
