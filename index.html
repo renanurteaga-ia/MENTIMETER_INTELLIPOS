@@ -1894,21 +1894,25 @@
                 };
             });
 
-            // Para NIVEL-RANGO: calcular suma por dimensión y el rango obtenido
+            // Para NIVEL-RANGO: calcular promedio por dimensión y el rango obtenido
             let rangos_dim_obtenidos = null;
             if (hasNivelRango) {
                 rangos_dim_obtenidos = {};
                 const nivelResps = respuestas.filter(r => r.tipo === 'nivel_rango');
-                // Agrupar por dimensión
-                const sumaPorDim = {};
+                // Agrupar suma y conteo por dimensión
+                const sumaPorDim  = {};
+                const countPorDim = {};
                 nivelResps.forEach(r => {
                     const d = r.dimension || '1';
-                    sumaPorDim[d] = (sumaPorDim[d] || 0) + (r.puntaje_obtenido || 0);
+                    sumaPorDim[d]  = (sumaPorDim[d]  || 0) + (r.puntaje_obtenido || 0);
+                    countPorDim[d] = (countPorDim[d] || 0) + 1;
                 });
                 Object.entries(sumaPorDim).forEach(([d, suma]) => {
-                    const rangosD = rangosDim[d] || [];
-                    const rango   = rangosD.find(r => suma >= r.min && suma <= r.max) || null;
-                    rangos_dim_obtenidos[d] = { suma, rango };
+                    const count    = countPorDim[d] || 1;
+                    const promedio = Math.round((suma / count) * 100) / 100;   // 2 decimales
+                    const rangosD  = rangosDim[d] || [];
+                    const rango    = rangosD.find(r => promedio >= r.min && promedio <= r.max) || null;
+                    rangos_dim_obtenidos[d] = { promedio, rango };
                 });
             }
 
@@ -1980,18 +1984,22 @@
                 const rango = rangos.find(r => puntaje_total >= r.min && puntaje_total <= r.max) || null;
                 return { pid, nick, puntaje_total, rango, nota: null, correct: null, total: null };
             } else if (hasNivelRango) {
-                // ── Nivel-Rango: suma de niveles por dimensión ────────────────
-                const sumaPorDim = {};
+                // ── Nivel-Rango: promedio de niveles por dimensión ────────────
+                const sumaPorDim  = {};
+                const countPorDim = {};
                 nivelQuestions.forEach(q => {
                     const origIdx = questions.indexOf(q);
                     const nivel   = parseInt(pvotes[String(origIdx)]) || 0;
                     const d       = q.dimension || '1';
-                    sumaPorDim[d] = (sumaPorDim[d] || 0) + nivel;
+                    sumaPorDim[d]  = (sumaPorDim[d]  || 0) + nivel;
+                    countPorDim[d] = (countPorDim[d] || 0) + 1;
                 });
                 const rangosPorDim = {};
                 Object.entries(sumaPorDim).forEach(([d, suma]) => {
-                    const rangosD = rangosDim[d] || [];
-                    rangosPorDim[d] = { suma, rango: rangosD.find(r => suma >= r.min && suma <= r.max) || null };
+                    const count    = countPorDim[d] || 1;
+                    const promedio = Math.round((suma / count) * 100) / 100;
+                    const rangosD  = rangosDim[d] || [];
+                    rangosPorDim[d] = { promedio, rango: rangosD.find(r => promedio >= r.min && promedio <= r.max) || null };
                 });
                 return { pid, nick, rangosPorDim, nota: null, correct: null, total: null, puntaje_total: null, rango: null };
             } else {
@@ -4389,12 +4397,16 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
         if (esNivelRango && rangosDimObtenidos) {
             // ── NIVEL-RANGO: un diagnóstico por dimensión ──────────────────────
             const dimsHtml = Object.entries(rangosDimObtenidos).map(([d, info]) => {
-                const rango = info.rango;
+                const rango    = info.rango;
+                // soporte tanto para datos nuevos (promedio) como datos anteriores (suma)
+                const valorMostrado = info.promedio !== undefined
+                    ? `Promedio: ${parseFloat(info.promedio).toFixed(2)}`
+                    : (info.suma !== undefined ? `Suma: ${info.suma}` : '');
                 return `
                 <div class="bg-teal-950/60 border border-teal-700/50 rounded-2xl p-4 shadow-xl space-y-1">
                     <div class="flex items-center justify-between">
                         <p class="text-xs text-teal-300 uppercase tracking-wider font-semibold">Dimensión ${d}</p>
-                        <span class="text-xs text-slate-400">${info.suma} pts</span>
+                        <span class="text-xs text-slate-400">${valorMostrado}</span>
                     </div>
                     ${rango
                         ? `<p class="text-xl font-extrabold text-teal-200">${rango.nombre}</p>

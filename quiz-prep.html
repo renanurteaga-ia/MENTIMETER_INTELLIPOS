@@ -93,9 +93,9 @@
         Para una <span class="text-violet-400 font-semibold">pregunta ponderada</span>, pon
         <span class="font-mono text-violet-400">PONDERADA</span> en col 6 y los pesos de cada opción en las cols 11-14 (PtjA…PtjD).<br>
         Para una <span class="text-teal-400 font-semibold">pregunta de niveles con dimensiones</span>, pon
-        <span class="font-mono text-teal-400">NIVEL-RANGO</span> en col 6, el <strong class="text-slate-300">N° de dimensión (1–9)</strong> en col 8 y el <strong class="text-slate-300">nombre de dimensión</strong> en col 9. El participante elige un nivel del 1 al 5.<br>
+        <span class="font-mono text-teal-400">NIVEL-RANGO</span> en col 6, el <strong class="text-slate-300">N° de dimensión (1–9)</strong> en col 8 y el <strong class="text-slate-300">nombre de dimensión</strong> en col 9. El participante elige un nivel del 1 al 5. La calificación por dimensión es el <strong class="text-teal-300">promedio</strong> de los niveles elegidos (entre 1.00 y 5.00).<br>
         Rangos ponderada: <span class="font-mono text-emerald-400">R1 · min · max · Nombre · Diagnóstico · Tu realidad (opt) · Tu reto (opt) · Recuerda (opt)</span><br>
-        Rangos de dimensión: <span class="font-mono text-teal-400">Rnm · min · max · Nombre · Diagnóstico</span> — donde <em>n</em> = N° de dimensión, <em>m</em> = N° de rango (máx 9 rangos / 9 dimensiones / 9 preguntas por dimensión)
+        Rangos de dimensión: <span class="font-mono text-teal-400">Rnm · min · max · Nombre · Diagnóstico</span> — donde <em>n</em> = N° de dimensión, <em>m</em> = N° de rango. Los valores min/max son promedios (ej: 1.00 a 2.49). Máx 9 rangos / 9 dimensiones / 9 preguntas por dimensión.
       </p>
       <textarea id="sheet-input" rows="8"
         placeholder="Pega aquí el contenido copiado de Google Sheets…"
@@ -445,7 +445,7 @@ function renderImageList() {
       const rowsHtml = rangos.map((r, idx) =>
         `<div class="flex gap-2 text-xs text-slate-300 py-0.5 pl-3">
           <span class="font-mono text-teal-400">R${dimNum}${idx+1}</span>
-          <span class="text-slate-500">${r.min}–${r.max} pts</span>
+          <span class="text-slate-500">${r.min}–${r.max} prom</span>
           <span class="font-semibold text-teal-300">${r.nombre}</span>
           ${r.diagnostico ? `<span class="text-slate-500 italic truncate">${r.diagnostico}</span>` : ''}
          </div>`
