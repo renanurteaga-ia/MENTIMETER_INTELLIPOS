@@ -2164,6 +2164,9 @@
         const esAbierta = (q.tipo || 'multiple_choice') === 'abierta';
         const esNivel   = (q.tipo || 'multiple_choice') === 'nivel_rango';
         const selected  = examAnswers[origIdx];
+        // DEBUG TEMPORAL — muestra el tipo detectado en pantalla
+        console.log('[EXAM-DEBUG] origIdx='+origIdx+' tipo='+q.tipo+' dimension='+q.dimension+' opcionA='+q.opcionA+' esNivel='+esNivel);
+        $('exam-options-container').innerHTML = `<p style="color:#facc15;font-size:11px;margin-bottom:6px">DEBUG tipo="${q.tipo||'undefined'}" dim="${q.dimension||'none'}" opA="${q.opcionA||'empty'}" esNivel=${esNivel}</p>`;
 
         if (esAbierta) {
             // Textarea para pregunta abierta
