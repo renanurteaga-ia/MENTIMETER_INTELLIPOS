@@ -1293,6 +1293,9 @@
             if (q.tipo === 'abierta')     return q;                              // ya correcto
             if (q.tipo === 'ponderada')   return q;                              // ya correcto
             if (q.tipo === 'nivel_rango') return q;                              // ya correcto
+            // Si tiene campo 'dimension' es nivel_rango aunque falte el campo 'tipo'
+            if (q.dimension !== undefined && q.dimension !== null && q.dimension !== '')
+                return { ...q, tipo: 'nivel_rango' };
             if (!q.opcionA) return { ...q, tipo: 'abierta', correcta: '' };     // sin opciones → abierta
             // Detección automática: tiene puntajeA definido y no tiene correcta → ponderada
             if (q.puntajeA !== undefined && q.puntajeA !== null && !q.correcta)
