@@ -1072,8 +1072,9 @@
 
     function parseSheetText(raw) {
         const lines = raw.split(/\r\n|\n/).filter(l => l.trim());
-        const parsed = [];
-        const rangos  = [];
+        const parsed    = [];
+        const rangos    = [];
+        const rangosDim = {};   // { dimNum: [{min,max,nombre,diagnostico}] }
         let start = 0;
         if (lines[0] && (lines[0].toLowerCase().includes('pregunta') || lines[0].toLowerCase().includes('question'))) start = 1;
         for (let i = start; i < lines.length; i++) {
@@ -1082,7 +1083,20 @@
             cols = cols.map(c => c.trim().replace(/^["']|["']$/g, ''));
             if (cols.length < 1 || !cols[0]) continue;
 
-            // ── Fila de rango diagnóstico (R1, R2…): R# | min | max | nombre | diagnóstico
+            // ── Rnm: exactamente R + dígito 1-9 + dígito 1-9 → rango de dimensión para NIVEL-RANGO
+            if (/^R[1-9][1-9]$/i.test(cols[0])) {
+                const dimNum = cols[0].charAt(1);
+                if (!rangosDim[dimNum]) rangosDim[dimNum] = [];
+                rangosDim[dimNum].push({
+                    nombre:      (cols[3] || '').trim() || cols[0],
+                    min:         parseFloat(cols[1]) || 0,
+                    max:         parseFloat(cols[2]) || 0,
+                    diagnostico: (cols[4] || '').trim()
+                });
+                continue;
+            }
+
+            // ── Fila de rango diagnóstico ponderada (R1, R2…): R# | min | max | nombre | diagnóstico
             if (/^R\d+$/i.test(cols[0])) {
                 rangos.push({
                     nombre:      (cols[3] || '').trim() || cols[0],
@@ -1127,6 +1141,21 @@
                     puntajeD: parseFloat(cols[13]) || 0,
                     puntaje, sesion, topico
                 });
+            } else if (tipoRaw === 'NIVEL-RANGO') {
+                // Col 7 = N° de dimensión (1-9), col 8 = nombre de dimensión
+                const dimNum    = (cols[7] || '').trim() || '1';
+                const dimNombre = (cols[8] || '').trim() || `Dimensión ${dimNum}`;
+                parsed.push({
+                    pregunta: cols[0],
+                    opcionA: '', opcionB: '', opcionC: '', opcionD: '',
+                    correcta: null,
+                    tipo:     'nivel_rango',
+                    imageUrl: convertGDriveUrl(cols[6] || ''),
+                    dimension: dimNum,
+                    dimensionNombre: dimNombre,
+                    puntaje: 1,
+                    sesion, topico
+                });
             } else if (cols.length >= 5) {
                 parsed.push({
                     pregunta: cols[0],
@@ -1141,13 +1170,15 @@
                 });
             }
         }
-        parsedRangos = rangos;
+        parsedRangos    = rangos;
+        parsedRangosDim = rangosDim;
         return parsed;
     }
 
     // ── PREPARACIÓN: PREVISUALIZACIÓN Y SUBIDA DE IMÁGENES ───────────────────
     let parsedQuestions = [];
     let parsedRangos    = [];   // rangos diagnósticos para cuestionarios PONDERADA
+    let parsedRangosDim = {};   // rangos por dimensión para NIVEL-RANGO: { dimN: [{min,max,nombre,diagnostico}] }
 
     // ── Biblioteca ────────────────────────────────────────────────────────────
     async function refreshLibrarySelector() {
@@ -1235,7 +1266,10 @@
         const opt = sel.options[sel.selectedIndex];
         if (!opt || !opt.value) { alert('Selecciona un cuestionario de la lista.'); return; }
         parsedQuestions = normalizarPreguntas(JSON.parse(opt.dataset.preguntas));
-        parsedRangos    = JSON.parse(opt.dataset.rangos || '[]');
+        const allRangos = JSON.parse(opt.dataset.rangos || '[]');
+        const dimEntry  = allRangos.find(r => r._dim === true);
+        parsedRangos    = allRangos.filter(r => r._dim !== true);
+        parsedRangosDim = dimEntry ? dimEntry.data : {};
         $('library-loaded-name').textContent = opt.textContent.split('(')[0].trim();
         $('library-loaded-count').textContent = parsedQuestions.length;
         $('library-loaded-msg').classList.remove('hidden');
@@ -1256,13 +1290,14 @@
     // Regla: si opcionA está vacía → pregunta abierta (una MC siempre tiene al menos opcionA).
     function normalizarPreguntas(arr) {
         return (arr || []).map(q => {
-            if (q.tipo === 'abierta')   return q;                              // ya correcto
-            if (q.tipo === 'ponderada') return q;                              // ya correcto
-            if (!q.opcionA) return { ...q, tipo: 'abierta', correcta: '' };   // sin opciones → abierta
+            if (q.tipo === 'abierta')     return q;                              // ya correcto
+            if (q.tipo === 'ponderada')   return q;                              // ya correcto
+            if (q.tipo === 'nivel_rango') return q;                              // ya correcto
+            if (!q.opcionA) return { ...q, tipo: 'abierta', correcta: '' };     // sin opciones → abierta
             // Detección automática: tiene puntajeA definido y no tiene correcta → ponderada
             if (q.puntajeA !== undefined && q.puntajeA !== null && !q.correcta)
                 return { ...q, tipo: 'ponderada' };
-            return { ...q, tipo: q.tipo || 'multiple_choice' };               // MC normal
+            return { ...q, tipo: q.tipo || 'multiple_choice' };                 // MC normal
         });
     }
 
@@ -1428,6 +1463,7 @@
             mode, timerSeconds, examMinutes, randomOrder, name,
             accessType, examType, sesionDefault, topicoDefault,
             rangos: parsedRangos,
+            rangosDim: parsedRangosDim,
             participantList: selectedParticipantList ? selectedParticipantList.lista : null,
             questionChangedAt:0, examStartedAt:0
         };
@@ -1475,7 +1511,7 @@
             : questions;
 
         // Estado inicial: 'lobby' — los participantes se registran antes de empezar
-        sessionData = { questions: questionsParaUsar, currentIndex:0, votes:{}, voters:{}, participants:{}, participantVotes:{}, examSubmissions:{}, reveal:false, status:'lobby', mode, timerSeconds, examMinutes, randomOrder, name, accessType, examType, sesionDefault, topicoDefault, rangos: parsedRangos, participantList: selectedParticipantList ? selectedParticipantList.lista : null, questionChangedAt:0, examStartedAt:0 };
+        sessionData = { questions: questionsParaUsar, currentIndex:0, votes:{}, voters:{}, participants:{}, participantVotes:{}, examSubmissions:{}, reveal:false, status:'lobby', mode, timerSeconds, examMinutes, randomOrder, name, accessType, examType, sesionDefault, topicoDefault, rangos: parsedRangos, rangosDim: parsedRangosDim, participantList: selectedParticipantList ? selectedParticipantList.lista : null, questionChangedAt:0, examStartedAt:0 };
 
         try {
             const { error } = await sb.from('quiz_session').insert([{ id: cloudId, data: sessionData }]);
@@ -1579,8 +1615,49 @@
         const tipoQ         = q.tipo || 'multiple_choice';
         const esAbiertaPres = tipoQ === 'abierta';
         const esPonderada   = tipoQ === 'ponderada';
+        const esNivelPres   = tipoQ === 'nivel_rango';
 
-        if (esPonderada) {
+        if (esNivelPres) {
+            // ── Nivel-Rango: mostrar distribución de niveles 1-5 ──────────────
+            const chartWrap = $('resultsChart');
+            if (chartWrap) chartWrap.parentElement.parentElement.classList.add('hidden');
+
+            const totalPart  = Object.keys(sessionData.participants || {}).length;
+            const voterList  = (sessionData.voters || {})[String(sessionData.currentIndex)] || [];
+            const respondido = voterList.length;
+            const pct        = totalPart > 0 ? Math.round(respondido / totalPart * 100) : 0;
+
+            const counts = [1,2,3,4,5].map(n => ({
+                n,
+                count: sessionData.votes[sessionData.currentIndex+'_'+n] || 0
+            }));
+            const maxCount = Math.max(...counts.map(c => c.count), 1);
+
+            $('presenter-options-grid').innerHTML = `
+                <div class="lg:col-span-2 p-5 bg-slate-800 rounded-2xl border border-teal-700/50 shadow-xl space-y-4">
+                    <div class="flex items-center justify-between">
+                        <p class="text-xs font-semibold text-teal-300 uppercase tracking-wider">
+                            <i class="fa-solid fa-layer-group mr-1"></i>${q.dimensionNombre || 'Dimensión '+q.dimension}
+                        </p>
+                        <p class="text-xs text-slate-400">${respondido}/${totalPart} respondieron (${pct}%)</p>
+                    </div>
+                    <div class="grid grid-cols-5 gap-3">
+                        ${counts.map(({n, count}) => `
+                        <div class="flex flex-col items-center gap-1">
+                            <span class="text-sm font-bold text-slate-300">${count}</span>
+                            <div class="w-full bg-slate-700 rounded-full overflow-hidden" style="height:64px">
+                                <div class="w-full rounded-full bg-teal-500 transition-all duration-700"
+                                     style="height:${Math.round(count/maxCount*100)}%;margin-top:${100-Math.round(count/maxCount*100)}%"></div>
+                            </div>
+                            <span class="text-lg font-extrabold text-teal-300">${n}</span>
+                        </div>`).join('')}
+                    </div>
+                    <div class="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                        <div class="h-full rounded-full bg-teal-500 transition-all duration-500" style="width:${pct}%"></div>
+                    </div>
+                </div>`;
+
+        } else if (esPonderada) {
             // ── Pregunta ponderada ─────────────────────────────────────────────
             const chartWrap = $('resultsChart');
             if (chartWrap) chartWrap.parentElement.parentElement.classList.remove('hidden');
@@ -1747,10 +1824,12 @@
         if (Object.keys(participants).length === 0) return;
 
         const hasPonderada  = questions.some(q => q.tipo === 'ponderada');
+        const hasNivelRango = questions.some(q => q.tipo === 'nivel_rango');
         const pondQuestions = questions.filter(q => q.tipo === 'ponderada');
+        const rangosDim     = sessionData.rangosDim || {};
 
-        // Puntaje posible: solo preguntas MC (no abiertas, no ponderadas)
-        const puntajePosible = hasPonderada ? 0 : questions.reduce((s, q) =>
+        // Puntaje posible: solo preguntas MC (no abiertas, no ponderadas, no nivel_rango)
+        const puntajePosible = (hasPonderada || hasNivelRango) ? 0 : questions.reduce((s, q) =>
             (q.tipo || 'multiple_choice') === 'multiple_choice' ? s + (q.puntaje || 1) : s, 0);
 
         const rows = Object.entries(participants).map(([pid, nick]) => {
@@ -1786,6 +1865,20 @@
                     };
                 }
 
+                if (tipo === 'nivel_rango') {
+                    const nivel = parseInt(respuestaDada) || 0;
+                    return {
+                        question_id:      q.id || null,
+                        tipo:             'nivel_rango',
+                        respuesta_dada:   respuestaDada,
+                        correcta:         null,
+                        puntaje_obtenido: nivel,
+                        puntaje_maximo:   5,
+                        dimension:        q.dimension,
+                        dimensionNombre:  q.dimensionNombre
+                    };
+                }
+
                 // MC
                 const esCorrecta = respuestaDada !== null && respuestaDada === q.correcta;
                 const puntajeQ   = q.puntaje || 1;
@@ -1801,12 +1894,30 @@
                 };
             });
 
+            // Para NIVEL-RANGO: calcular suma por dimensión y el rango obtenido
+            let rangos_dim_obtenidos = null;
+            if (hasNivelRango) {
+                rangos_dim_obtenidos = {};
+                const nivelResps = respuestas.filter(r => r.tipo === 'nivel_rango');
+                // Agrupar por dimensión
+                const sumaPorDim = {};
+                nivelResps.forEach(r => {
+                    const d = r.dimension || '1';
+                    sumaPorDim[d] = (sumaPorDim[d] || 0) + (r.puntaje_obtenido || 0);
+                });
+                Object.entries(sumaPorDim).forEach(([d, suma]) => {
+                    const rangosD = rangosDim[d] || [];
+                    const rango   = rangosD.find(r => suma >= r.min && suma <= r.max) || null;
+                    rangos_dim_obtenidos[d] = { suma, rango };
+                });
+            }
+
             // Para ponderada: puntaje_total y rango; para MC: nota 0-20
             let nota = null, puntaje_total = null, rango_obtenido = null;
             if (hasPonderada) {
                 puntaje_total  = puntajeObtenido;
                 rango_obtenido = rangos.find(r => puntaje_total >= r.min && puntaje_total <= r.max) || null;
-            } else {
+            } else if (!hasNivelRango) {
                 nota = puntajePosible > 0
                     ? Math.round((puntajeObtenido / puntajePosible) * 20 * 10) / 10
                     : null;
@@ -1826,6 +1937,7 @@
                 nota,
                 puntaje_total,
                 rango_obtenido,
+                rangos_dim_obtenidos,
                 completado_en:              new Date().toISOString()
             };
         });
@@ -1845,9 +1957,12 @@
         const participants     = sessionData.participants     || {};
         const participantVotes = sessionData.participantVotes || {};
         const rangos           = sessionData.rangos           || [];
+        const rangosDim        = sessionData.rangosDim        || {};
 
         const hasPonderada  = questions.some(q => q.tipo === 'ponderada');
+        const hasNivelRango = questions.some(q => q.tipo === 'nivel_rango');
         const pondQuestions = questions.filter(q => q.tipo === 'ponderada');
+        const nivelQuestions = questions.filter(q => q.tipo === 'nivel_rango');
         const mcQuestions   = questions.filter(q => (q.tipo || 'multiple_choice') === 'multiple_choice');
         const totalMC       = mcQuestions.length;
 
@@ -1864,6 +1979,21 @@
                 });
                 const rango = rangos.find(r => puntaje_total >= r.min && puntaje_total <= r.max) || null;
                 return { pid, nick, puntaje_total, rango, nota: null, correct: null, total: null };
+            } else if (hasNivelRango) {
+                // ── Nivel-Rango: suma de niveles por dimensión ────────────────
+                const sumaPorDim = {};
+                nivelQuestions.forEach(q => {
+                    const origIdx = questions.indexOf(q);
+                    const nivel   = parseInt(pvotes[String(origIdx)]) || 0;
+                    const d       = q.dimension || '1';
+                    sumaPorDim[d] = (sumaPorDim[d] || 0) + nivel;
+                });
+                const rangosPorDim = {};
+                Object.entries(sumaPorDim).forEach(([d, suma]) => {
+                    const rangosD = rangosDim[d] || [];
+                    rangosPorDim[d] = { suma, rango: rangosD.find(r => suma >= r.min && suma <= r.max) || null };
+                });
+                return { pid, nick, rangosPorDim, nota: null, correct: null, total: null, puntaje_total: null, rango: null };
             } else {
                 // ── Opción múltiple clásica ───────────────────────────────────
                 let correct = 0;
@@ -1879,6 +2009,8 @@
         if (hasPonderada) {
             scores.sort((a, b) => (b.puntaje_total ?? 0) - (a.puntaje_total ?? 0));
             return { scores, avg: null, hasPonderada: true };
+        } else if (hasNivelRango) {
+            return { scores, avg: null, hasPonderada: false, hasNivelRango: true };
         } else {
             scores.sort((a, b) => (b.nota ?? 0) - (a.nota ?? 0));
             const notasValidas = scores.filter(x => x.nota !== null);
@@ -3380,6 +3512,7 @@
         const tipoQ     = q.tipo || 'multiple_choice';
         const esAbierta = tipoQ === 'abierta';
         const esPond    = tipoQ === 'ponderada';
+        const esNivel   = tipoQ === 'nivel_rango';
 
         if (esAbierta) {
             // ── Pregunta abierta ──────────────────────────────────────────────
@@ -3439,6 +3572,34 @@
                 </button>`;
             }).join('');
 
+        } else if (esNivel && votedOption) {
+            // ── Nivel-Rango: ya respondió ─────────────────────────────────────
+            container.innerHTML = `
+                <div class="p-5 bg-slate-800 rounded-2xl border border-teal-700/50 shadow-xl text-center fade-in">
+                    <p class="text-teal-300 font-bold">✅ Nivel enviado: <strong class="text-3xl text-teal-200">${votedOption}</strong></p>
+                    <p class="text-xs text-slate-400 mt-2">Dimensión: ${q.dimensionNombre || 'Dim '+q.dimension}</p>
+                    <p class="text-xs text-slate-500 mt-1">Esperando al presentador.</p>
+                </div>`;
+            $('vote-results').classList.add('hidden');
+
+        } else if (esNivel) {
+            // ── Nivel-Rango: seleccionar nivel 1-5 ───────────────────────────
+            $('vote-results').classList.add('hidden');
+            container.innerHTML = `
+                <div class="fade-in space-y-3">
+                    <div class="bg-teal-950/40 border border-teal-700/40 rounded-xl p-3 text-center">
+                        <p class="text-xs font-semibold text-teal-300 uppercase tracking-wider">${q.dimensionNombre || 'Dimensión '+q.dimension}</p>
+                        <p class="text-xs text-slate-400 mt-1">Elige tu nivel (1 = bajo · 5 = alto)</p>
+                    </div>
+                    <div class="grid grid-cols-5 gap-2">
+                        ${[1,2,3,4,5].map(n => `
+                        <button onclick="submitLevelVote(${n})"
+                            class="aspect-square rounded-xl font-extrabold text-xl bg-teal-700 hover:bg-teal-500 active:scale-95 text-white shadow-lg transition">
+                            ${n}
+                        </button>`).join('')}
+                    </div>
+                </div>`;
+
         } else if (votedOption) {
             // ── MC: ya respondió ─────────────────────────────────────────────
             const isCorrect = sessionData.reveal && votedOption === q.correcta;
@@ -3483,10 +3644,14 @@
 
         const tipoQ = q.tipo || 'multiple_choice';
 
-        // Preguntas abiertas no tienen barras de opciones
+        // Preguntas abiertas y nivel_rango no tienen barras A/B/C/D
         if (tipoQ === 'abierta') {
             $('vote-results-bars').innerHTML = `
                 <p class="text-slate-400 text-sm text-center py-2">Pregunta abierta — las respuestas serán calificadas por el presentador.</p>`;
+            return;
+        }
+        if (tipoQ === 'nivel_rango') {
+            $('vote-results-bars').innerHTML = '';
             return;
         }
 
@@ -3555,6 +3720,40 @@
 
         renderParticipantQuestion();
         renderVoteResults();
+    }
+
+    // ── ENVIAR NIVEL (NIVEL-RANGO) ────────────────────────────────────────────
+    async function submitLevelVote(level) {
+        const voteKey = `voted_${cloudId}_${sessionData.currentIndex}`;
+        if (localStorage.getItem(voteKey)) { return; }
+
+        const latest = await fetchData();
+        if (!latest) { alert('Error de conexión. Intenta de nuevo.'); return; }
+        sessionData = latest;
+
+        const qIdx      = String(sessionData.currentIndex);
+        const voters    = sessionData.voters || {};
+        const voterList = voters[qIdx] || [];
+
+        if (voterList.includes(participantId)) {
+            localStorage.setItem(voteKey, String(level));
+            renderParticipantQuestion();
+            return;
+        }
+
+        // Registrar en votes como conteo de niveles: key = qIdx_1..5
+        const vk = sessionData.currentIndex + '_' + level;
+        sessionData.votes[vk] = (sessionData.votes[vk] || 0) + 1;
+        sessionData.voters[qIdx] = [...voterList, participantId];
+
+        // Guardar nivel elegido para cálculo de dimensión
+        sessionData.participantVotes = sessionData.participantVotes || {};
+        sessionData.participantVotes[participantId] = sessionData.participantVotes[participantId] || {};
+        sessionData.participantVotes[participantId][qIdx] = String(level);
+
+        await push();
+        localStorage.setItem(voteKey, String(level));
+        renderParticipantQuestion();
     }
 
     // ── ENVIAR RESPUESTA ABIERTA (modo sesión) ────────────────────────────────
@@ -4134,12 +4333,14 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
             ? (tipoLabels[sesData?.data?.examType] || 'Examen')
             : 'Cuestionario';
 
-        const respuestas    = data.respuestas || [];
-        const hayPendientes = respuestas.some(r => r.pendiente_calificacion);
-        const nota          = data.nota;
-        const esPonderada   = respuestas.length > 0 && respuestas.some(r => r.tipo === 'ponderada');
-        const puntajeTotal  = data.puntaje_total;
-        const rangoObtenido = data.rango_obtenido;
+        const respuestas         = data.respuestas || [];
+        const hayPendientes      = respuestas.some(r => r.pendiente_calificacion);
+        const nota               = data.nota;
+        const esPonderada        = respuestas.length > 0 && respuestas.some(r => r.tipo === 'ponderada');
+        const esNivelRango       = respuestas.length > 0 && respuestas.some(r => r.tipo === 'nivel_rango');
+        const puntajeTotal       = data.puntaje_total;
+        const rangoObtenido      = data.rango_obtenido;
+        const rangosDimObtenidos = data.rangos_dim_obtenidos || null;
 
         const respHtml = respuestas.map((r, idx) => {
             if ((r.tipo || 'multiple_choice') === 'ponderada') {
@@ -4148,6 +4349,14 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
                     <p class="text-xs text-slate-400">Respuesta: <strong class="text-white">${r.respuesta_dada || '—'}</strong>
                         <span class="text-violet-300 font-semibold ml-2">${r.puntaje_obtenido} pts</span>
                         <span class="text-slate-500 text-[10px] ml-1">/ máx ${r.puntaje_maximo}</span>
+                    </p>
+                </div>`;
+            }
+            if ((r.tipo || 'multiple_choice') === 'nivel_rango') {
+                return `<div class="border-b border-slate-700/40 pb-2">
+                    <p class="text-xs font-semibold text-teal-300 mb-0.5">🔢 Pregunta ${idx+1} <span class="text-slate-500 font-normal">· ${r.dimensionNombre || 'Dim '+r.dimension}</span></p>
+                    <p class="text-xs text-slate-400">Nivel elegido: <strong class="text-white">${r.respuesta_dada || '—'}</strong>
+                        <span class="text-teal-400 font-semibold ml-2">/ 5</span>
                     </p>
                 </div>`;
             }
@@ -4177,7 +4386,30 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
 
         // ── Bloque de resultado principal (varía según tipo) ──────────────────
         let resultadoHtml = '';
-        if (esPonderada) {
+        if (esNivelRango && rangosDimObtenidos) {
+            // ── NIVEL-RANGO: un diagnóstico por dimensión ──────────────────────
+            const dimsHtml = Object.entries(rangosDimObtenidos).map(([d, info]) => {
+                const rango = info.rango;
+                return `
+                <div class="bg-teal-950/60 border border-teal-700/50 rounded-2xl p-4 shadow-xl space-y-1">
+                    <div class="flex items-center justify-between">
+                        <p class="text-xs text-teal-300 uppercase tracking-wider font-semibold">Dimensión ${d}</p>
+                        <span class="text-xs text-slate-400">${info.suma} pts</span>
+                    </div>
+                    ${rango
+                        ? `<p class="text-xl font-extrabold text-teal-200">${rango.nombre}</p>
+                           ${rango.diagnostico ? `<p class="text-sm text-slate-300">${rango.diagnostico}</p>` : ''}`
+                        : `<p class="text-sm text-slate-400 italic">Sin diagnóstico disponible para este puntaje.</p>`}
+                </div>`;
+            }).join('');
+            resultadoHtml = `
+            <div class="space-y-3">
+                <p class="text-xs font-semibold text-teal-300 uppercase tracking-wider text-center">
+                    <i class="fa-solid fa-layer-group mr-1"></i>Diagnóstico por dimensión
+                </p>
+                ${dimsHtml}
+            </div>`;
+        } else if (esPonderada) {
             const ptMax = rangoObtenido ? rangoObtenido.max : '?';
             resultadoHtml = `
             <div class="bg-slate-800 border border-violet-700/50 rounded-2xl p-6 text-center shadow-xl space-y-1">
@@ -4210,7 +4442,7 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
 
         $('boleta-content').innerHTML = `
             <div class="text-center space-y-1 pb-2">
-                <div class="text-4xl">${esPonderada ? '📊' : '📋'}</div>
+                <div class="text-4xl">${esNivelRango ? '🔢' : esPonderada ? '📊' : '📋'}</div>
                 <h2 class="text-xl font-extrabold text-white">${sesName}</h2>
                 <p class="text-xs font-semibold text-indigo-400 uppercase tracking-wider">${tipoPrueba}</p>
                 <p class="text-xs text-slate-400">${data.participante_identificador}</p>

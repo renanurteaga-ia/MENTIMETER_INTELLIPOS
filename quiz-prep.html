@@ -92,7 +92,10 @@
         <span class="font-mono text-amber-400">ABIERTA</span> en col 6 (las opciones se ignoran).<br>
         Para una <span class="text-violet-400 font-semibold">pregunta ponderada</span>, pon
         <span class="font-mono text-violet-400">PONDERADA</span> en col 6 y los pesos de cada opción en las cols 11-14 (PtjA…PtjD).<br>
-        Al final de las preguntas, agrega filas de rango: <span class="font-mono text-emerald-400">R1 · min · max · Nombre · Diagnóstico · Tu realidad (opcional) · Tu reto (opcional) · Recuerda (opcional)</span>
+        Para una <span class="text-teal-400 font-semibold">pregunta de niveles con dimensiones</span>, pon
+        <span class="font-mono text-teal-400">NIVEL-RANGO</span> en col 6, el <strong class="text-slate-300">N° de dimensión (1–9)</strong> en col 8 y el <strong class="text-slate-300">nombre de dimensión</strong> en col 9. El participante elige un nivel del 1 al 5.<br>
+        Rangos ponderada: <span class="font-mono text-emerald-400">R1 · min · max · Nombre · Diagnóstico · Tu realidad (opt) · Tu reto (opt) · Recuerda (opt)</span><br>
+        Rangos de dimensión: <span class="font-mono text-teal-400">Rnm · min · max · Nombre · Diagnóstico</span> — donde <em>n</em> = N° de dimensión, <em>m</em> = N° de rango (máx 9 rangos / 9 dimensiones / 9 preguntas por dimensión)
       </p>
       <textarea id="sheet-input" rows="8"
         placeholder="Pega aquí el contenido copiado de Google Sheets…"
@@ -155,6 +158,7 @@ const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 // ── State ─────────────────────────────────────────────────────────────────────
 let parsedQuestions = [];
 let parsedRangos    = [];   // rangos diagnósticos para cuestionarios PONDERADA
+let parsedRangosDim = {};  // rangos por dimensión para NIVEL-RANGO: { dimN: [{min,max,nombre,diagnostico}] }
 let editingQuizId   = null;
 let deleteTargetId  = null;
 let quizMap         = {};   // id → quiz completo, para evitar problemas con comillas en onclick
@@ -165,14 +169,30 @@ const $ = id => document.getElementById(id);
 function parseSheetText(raw) {
   const lines = raw.trim().split('\n').filter(l => l.trim());
   const result = [];
-  const rangos  = [];
+  const rangos    = [];   // para PONDERADA: R1, R2…
+  const rangosDim = {};   // para NIVEL-RANGO: R11, R12, R21… → { '1': [{…}], '2': [{…}] }
+
   for (const line of lines) {
     const cols = line.split('\t');
     if (cols.length < 1) continue;
     const first = cols[0].trim();
     if (first.toLowerCase() === 'pregunta' || first.toLowerCase() === 'question') continue;
 
-    // ── Fila de rango (R1, R2, R3…): cols → R# | min | max | nombre | diagnóstico
+    // ── Fila de rango de dimensión: Rnm (exactamente R + 1 dígito + 1 dígito) → NIVEL-RANGO
+    if (/^R[1-9][1-9]$/i.test(first)) {
+      const dimNum  = first.charAt(1);   // n: número de dimensión
+      const rangoEntry = {
+        nombre:      (cols[3] || '').trim() || first,
+        min:         parseFloat(cols[1]) || 0,
+        max:         parseFloat(cols[2]) || 0,
+        diagnostico: (cols[4] || '').trim()
+      };
+      if (!rangosDim[dimNum]) rangosDim[dimNum] = [];
+      rangosDim[dimNum].push(rangoEntry);
+      continue;
+    }
+
+    // ── Fila de rango ponderada: R1, R2, R3… (número de 1+ dígitos pero NO 2 dígitos del patrón Rnm)
     if (/^R\d+$/i.test(first)) {
       const rangoEntry = {
         nombre:      (cols[3] || '').trim() || first,
@@ -201,7 +221,6 @@ function parseSheetText(raw) {
         puntaje
       });
     } else if (tipoRaw === 'PONDERADA') {
-      // Pregunta ponderada: pesos por opción en cols 10-13 (PtjA…PtjD)
       result.push({
         pregunta: first,
         opcionA:  (cols[1]||'').trim(),
@@ -216,6 +235,20 @@ function parseSheetText(raw) {
         puntajeC: parseFloat(cols[12]) || 0,
         puntajeD: parseFloat(cols[13]) || 0,
         puntaje
+      });
+    } else if (tipoRaw === 'NIVEL-RANGO') {
+      // Col 7 = N° de dimensión (1-9), col 8 = nombre de dimensión
+      const dimNum    = (cols[7] || '').trim() || '1';
+      const dimNombre = (cols[8] || '').trim() || `Dimensión ${dimNum}`;
+      result.push({
+        pregunta:   first,
+        opcionA: '', opcionB: '', opcionC: '', opcionD: '',
+        correcta:   null,
+        tipo:       'nivel_rango',
+        imageUrl:   (cols[6] || '').trim(),
+        dimension:  dimNum,
+        dimensionNombre: dimNombre,
+        puntaje:    1   // puntaje unitario; la escala es 1-5
       });
     } else {
       if (cols.length < 6) continue;
@@ -232,7 +265,8 @@ function parseSheetText(raw) {
       });
     }
   }
-  parsedRangos = rangos;
+  parsedRangos    = rangos;
+  parsedRangosDim = rangosDim;
   return result;
 }
 
@@ -242,6 +276,7 @@ function showLibraryView() {
   $('view-create').classList.add('hidden');
   parsedQuestions = [];
   parsedRangos    = [];
+  parsedRangosDim = {};
   editingQuizId   = null;
   loadLibrary();
 }
@@ -267,7 +302,11 @@ function showCreateView(quiz = null) {
     $('create-title').textContent = 'Editar cuestionario';
     $('save-btn-label').textContent = 'Guardar cambios';
     parsedQuestions = quiz.preguntas;
-    parsedRangos    = quiz.rangos || [];
+    // Separate ponderada rangos from dimension-rangos marker
+    const allRangos = quiz.rangos || [];
+    const dimEntry  = allRangos.find(r => r._dim === true);
+    parsedRangos    = allRangos.filter(r => r._dim !== true);
+    parsedRangosDim = dimEntry ? dimEntry.data : {};
     renderImageList();
     $('image-panel').classList.remove('hidden');
     // populate textarea for reference
@@ -279,10 +318,18 @@ function showCreateView(quiz = null) {
           return [q.pregunta, q.opcionA, q.opcionB, q.opcionC, q.opcionD, 'PONDERADA',
                   q.imageUrl||'', q.puntaje||1, '', '',
                   q.puntajeA||0, q.puntajeB||0, q.puntajeC||0, q.puntajeD||0].join('\t');
+        if (q.tipo === 'nivel_rango')
+          return [q.pregunta, '', '', '', '', 'NIVEL-RANGO', q.imageUrl||'', q.dimension||'1', q.dimensionNombre||''].join('\t');
         return [q.pregunta, q.opcionA, q.opcionB, q.opcionC, q.opcionD, q.correcta, q.imageUrl||'', q.puntaje||1].join('\t');
       }),
       ...parsedRangos.map((r, i) =>
         [`R${i+1}`, r.min, r.max, r.nombre, r.diagnostico||''].join('\t')
+      ),
+      // Dimension range rows: Rnm format (n=dim, m=range index 1-based)
+      ...Object.entries(parsedRangosDim).flatMap(([dimNum, rangos]) =>
+        rangos.map((r, m) =>
+          [`R${dimNum}${m+1}`, r.min, r.max, r.nombre, r.diagnostico||''].join('\t')
+        )
       )
     ].join('\n');
     $('sheet-input').value = tsv;
@@ -368,6 +415,12 @@ function renderImageList() {
   const withImg = parsedQuestions.filter(q => q.imageUrl).length;
   $('img-count').textContent = `${parsedQuestions.length} preguntas · ${withImg} con imagen`;
 
+  // Limpiar previews anteriores
+  const prevPond = $('rangos-preview');
+  if (prevPond) prevPond.remove();
+  const prevDim = $('rangos-dim-preview');
+  if (prevDim) prevDim.remove();
+
   // Mostrar resumen de rangos si hay cuestionario ponderada
   const hasPond = parsedQuestions.some(q => q.tipo === 'ponderada');
   if (hasPond && parsedRangos.length > 0) {
@@ -378,21 +431,41 @@ function renderImageList() {
         ${r.diagnostico ? `<span class="text-slate-500 italic truncate">${r.diagnostico}</span>` : ''}
        </div>`
     ).join('');
-    const existing = $('rangos-preview');
-    if (!existing) {
-      const div = document.createElement('div');
-      div.id = 'rangos-preview';
-      div.className = 'bg-violet-950/40 border border-violet-700/40 rounded-xl p-3 space-y-1';
-      div.innerHTML = `<p class="text-xs font-semibold text-violet-300 uppercase tracking-wider mb-2"><i class="fa-solid fa-chart-bar mr-1"></i>Rangos diagnósticos (${parsedRangos.length})</p>${rangosHtml}`;
-      $('image-list').parentElement.insertBefore(div, $('image-list'));
-    }
+    const div = document.createElement('div');
+    div.id = 'rangos-preview';
+    div.className = 'bg-violet-950/40 border border-violet-700/40 rounded-xl p-3 space-y-1';
+    div.innerHTML = `<p class="text-xs font-semibold text-violet-300 uppercase tracking-wider mb-2"><i class="fa-solid fa-chart-bar mr-1"></i>Rangos diagnósticos (${parsedRangos.length})</p>${rangosHtml}`;
+    $('image-list').parentElement.insertBefore(div, $('image-list'));
+  }
+
+  // Mostrar resumen de rangos por dimensión si hay cuestionario NIVEL-RANGO
+  const hasNivel = parsedQuestions.some(q => q.tipo === 'nivel_rango');
+  if (hasNivel && Object.keys(parsedRangosDim).length > 0) {
+    const dimsHtml = Object.entries(parsedRangosDim).map(([dimNum, rangos]) => {
+      const rowsHtml = rangos.map((r, idx) =>
+        `<div class="flex gap-2 text-xs text-slate-300 py-0.5 pl-3">
+          <span class="font-mono text-teal-400">R${dimNum}${idx+1}</span>
+          <span class="text-slate-500">${r.min}–${r.max} pts</span>
+          <span class="font-semibold text-teal-300">${r.nombre}</span>
+          ${r.diagnostico ? `<span class="text-slate-500 italic truncate">${r.diagnostico}</span>` : ''}
+         </div>`
+      ).join('');
+      const dimNombre = parsedQuestions.find(q => q.tipo === 'nivel_rango' && q.dimension == dimNum)?.dimensionNombre || `Dimensión ${dimNum}`;
+      return `<div class="mb-1"><span class="text-xs font-semibold text-teal-200">Dim ${dimNum}: ${dimNombre}</span>${rowsHtml}</div>`;
+    }).join('');
+    const div = document.createElement('div');
+    div.id = 'rangos-dim-preview';
+    div.className = 'bg-teal-950/40 border border-teal-700/40 rounded-xl p-3 space-y-1';
+    div.innerHTML = `<p class="text-xs font-semibold text-teal-300 uppercase tracking-wider mb-2"><i class="fa-solid fa-layer-group mr-1"></i>Rangos por dimensión (${Object.keys(parsedRangosDim).length} dimensiones)</p>${dimsHtml}`;
+    $('image-list').parentElement.insertBefore(div, $('image-list'));
   }
 
   $('image-list').innerHTML = parsedQuestions.map((q, i) => {
     const esAbierta  = q.tipo === 'abierta';
     const esPond     = q.tipo === 'ponderada';
+    const esNivel    = q.tipo === 'nivel_rango';
     return `
-    <div class="bg-slate-900 rounded-xl p-3 space-y-2 border ${esAbierta ? 'border-amber-700/40' : esPond ? 'border-violet-700/40' : 'border-slate-700/40'}">
+    <div class="bg-slate-900 rounded-xl p-3 space-y-2 border ${esAbierta ? 'border-amber-700/40' : esPond ? 'border-violet-700/40' : esNivel ? 'border-teal-700/40' : 'border-slate-700/40'}">
       <div class="flex items-center gap-2">
         <p class="text-sm font-semibold text-white leading-snug flex-1">${i + 1}. ${q.pregunta}</p>
         ${esAbierta
@@ -403,13 +476,17 @@ function renderImageList() {
           ? `<span class="shrink-0 text-xs px-2 py-0.5 rounded-full bg-violet-900/50 border border-violet-700/60 text-violet-300 font-semibold">
                <i class="fa-solid fa-chart-bar mr-1"></i>Ponderada A:${q.puntajeA||0} B:${q.puntajeB||0} C:${q.puntajeC||0} D:${q.puntajeD||0}
              </span>`
+          : esNivel
+          ? `<span class="shrink-0 text-xs px-2 py-0.5 rounded-full bg-teal-900/50 border border-teal-700/60 text-teal-300 font-semibold">
+               <i class="fa-solid fa-layer-group mr-1"></i>Dim ${q.dimension}: ${q.dimensionNombre||''}
+             </span>`
           : `<span class="shrink-0 text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 border border-indigo-700/40 text-indigo-300">
                ✓ ${q.correcta}
              </span>`
         }
-        <span class="shrink-0 text-xs px-2 py-0.5 rounded-full bg-slate-700 border border-slate-600 text-slate-300 font-semibold">
+        ${!esNivel ? `<span class="shrink-0 text-xs px-2 py-0.5 rounded-full bg-slate-700 border border-slate-600 text-slate-300 font-semibold">
           ${q.puntaje || 1} pt${(q.puntaje || 1) !== 1 ? 's' : ''}
-        </span>
+        </span>` : ''}
       </div>
       <div class="flex items-center gap-3 flex-wrap">
         ${q.imageUrl
@@ -467,12 +544,18 @@ async function saveQuiz() {
   btn.disabled = true;
   $('save-status').textContent = '';
 
+  // Build rangos field: regular ponderada rangos + embedded dimension-rangos marker
+  const rangosToSave = [...parsedRangos];
+  if (Object.keys(parsedRangosDim).length > 0) {
+    rangosToSave.push({ _dim: true, data: parsedRangosDim });
+  }
+
   try {
     if (editingQuizId) {
-      const { error } = await sb.from('quizzes').update({ nombre, preguntas: parsedQuestions, rangos: parsedRangos }).eq('id', editingQuizId);
+      const { error } = await sb.from('quizzes').update({ nombre, preguntas: parsedQuestions, rangos: rangosToSave }).eq('id', editingQuizId);
       if (error) throw error;
     } else {
-      const { error } = await sb.from('quizzes').insert({ nombre, preguntas: parsedQuestions, rangos: parsedRangos });
+      const { error } = await sb.from('quizzes').insert({ nombre, preguntas: parsedQuestions, rangos: rangosToSave });
       if (error) throw error;
     }
     $('save-status').innerHTML = '<i class="fa-solid fa-check-circle text-emerald-400"></i> <span class="text-emerald-400">¡Guardado correctamente!</span>';
