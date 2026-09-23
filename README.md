@@ -56,6 +56,31 @@ R1	52	60	Muy alta resiliencia	Descripción del diagnóstico	Tu realidad (opciona
 R2	42	51	Alta resiliencia	...
 ```
 
+### NIVEL-RANGO (niveles con dimensiones)
+El participante elige un nivel del 1 al 5 en cada pregunta. Las preguntas se agrupan por dimensión; la puntuación de cada dimensión es la suma de niveles de sus preguntas. El resultado muestra un diagnóstico por dimensión.
+
+Límites: máximo 9 dimensiones, 9 rangos por dimensión, 9 preguntas por dimensión.
+
+| Col | Contenido |
+|-----|-----------|
+| 1 | Texto de la pregunta |
+| 2–5 | (vacías) |
+| 6 | `NIVEL-RANGO` (literal) |
+| 7 | URL de imagen (opcional) |
+| 8 | Número de dimensión (1–9) |
+| 9 | Nombre de la dimensión |
+
+Al final de las preguntas, agrega filas de rango por dimensión con el formato `Rnm` donde `n` = número de dimensión y `m` = número de rango (ambos dígitos 1–9):
+
+```
+R11	1	9	Bajo	Diagnóstico para dimensión 1, rango 1
+R12	10	18	Alto	Diagnóstico para dimensión 1, rango 2
+R21	1	5	Inicial	Diagnóstico para dimensión 2, rango 1
+R22	6	10	Avanzado	Diagnóstico para dimensión 2, rango 2
+```
+
+Puntuación por dimensión: suma de los niveles elegidos por el participante en todas las preguntas de esa dimensión. Puntuación máxima = 5 × (número de preguntas en la dimensión).
+
 ### Pregunta abierta
 Pon `ABIERTA` en la columna 6; las opciones se ignoran. Requiere calificación manual por el presentador.
 
@@ -81,6 +106,7 @@ El identificador se genera automáticamente: `Inicial.ApellidoPaterno.InicialMat
 - **Cuestionario interactivo**: el presentador controla el ritmo, resultados en tiempo real por pregunta.
 - **Examen individual**: cada participante responde a su propio ritmo con cronómetro.
 - **Tipo PONDERADA**: cuestionario diagnóstico con puntaje ponderado por opción y rangos con diagnóstico, "tu realidad", "tu reto" y "recuerda".
+- **Tipo NIVEL-RANGO**: cuestionario de niveles 1–5 agrupados por dimensión; la boleta muestra el diagnóstico por dimensión según la suma de niveles alcanzada.
 - **Preguntas abiertas**: el participante escribe texto libre; el presentador califica manualmente.
 - **Sesión cerrada**: acceso restringido a participantes de la lista, validados por código de alumno.
 - **Registro de resultados**: al finalizar la sesión se graban los resultados individuales en `session_results`.
@@ -108,10 +134,13 @@ El identificador se genera automáticamente: `Inicial.ApellidoPaterno.InicialMat
 | `quiz_session` | Sesiones en vivo activas | `id`, `data` (jsonb) |
 | `quizzes` | Biblioteca de cuestionarios | `id`, `nombre`, `preguntas` (jsonb), `tipo`, `rangos` (jsonb) |
 | `participant_lists` | Listas de participantes | `id`, `nombre`, `lista` (jsonb) |
-| `session_results` | Resultados individuales por sesión | `quiz_session_id`, `quiz_id`, `participante_codigo`, `respuestas` (jsonb), `puntaje_obtenido`, `puntaje_posible`, `nota` (MC), `puntaje_total` (PONDERADA), `rango_obtenido` (jsonb) |
+| `session_results` | Resultados individuales por sesión | `quiz_session_id`, `quiz_id`, `participante_codigo`, `respuestas` (jsonb), `puntaje_obtenido`, `puntaje_posible`, `nota` (MC), `puntaje_total` (PONDERADA), `rango_obtenido` (jsonb), `rangos_dim_obtenidos` (jsonb, NIVEL-RANGO) |
 | `authorized_users` | Presentadores autorizados | `email`, `activo`, `nombre` |
 
 Storage: bucket `quiz-images` (público).
+
+### Campo `rangos` en `quizzes` — almacenamiento de rangos por dimensión
+Para cuestionarios NIVEL-RANGO, los rangos de dimensión se almacenan incrustados en el array `rangos` como último elemento con la forma `{ "_dim": true, "data": { "1": [...], "2": [...] } }`. No se requiere cambio de esquema.
 
 ---
 
@@ -121,7 +150,7 @@ Storage: bucket `quiz-images` (público).
 |------|--------|-------------|
 | `main` | Estable | Versión quiz-only sin login |
 | `v2` | Estable | Quiz + examen + login + imágenes por URL |
-| `v2-dev` | Activa | Versión completa: biblioteca, listas, PONDERADA, historial, PDF |
+| `v2-dev` | Activa | Versión completa: biblioteca, listas, PONDERADA, NIVEL-RANGO, historial, PDF |
 
 ---
 
