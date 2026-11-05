@@ -1,0 +1,30 @@
+name: Ping Supabase — Mantener BD activa
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    name: Ping Supabase REST API
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Hacer ping a Supabase
+        run: |
+          echo "Haciendo ping a Supabase: $(date)"
+
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
+
+          echo "Respuesta HTTP: $RESPONSE"
+
+          if [ "$RESPONSE" -ge 200 ] && [ "$RESPONSE" -lt 500 ]; then
+            echo "Supabase esta activo y respondiendo correctamente."
+          else
+            echo "Error: Supabase respondio con codigo $RESPONSE"
+            exit 1
+          fi
