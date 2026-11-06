@@ -444,6 +444,9 @@
                         <i class="fa-solid fa-users mr-1 text-indigo-400"></i>
                         <span id="participants-count">0</span> participantes
                     </span>
+                    <span id="answered-badge" class="text-sm font-bold bg-emerald-900/40 border border-emerald-600/60 text-emerald-300 px-3 py-1 rounded-lg">
+                        <i class="fa-solid fa-circle-check mr-1"></i>Respondieron: <span id="answered-count">0</span> / <span id="answered-total">0</span>
+                    </span>
                 </div>
                 <div class="flex items-center space-x-2">
                     <button onclick="prevQuestion()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm transition">
@@ -1608,6 +1611,7 @@
 
         $('presenter-question-text').textContent = q.pregunta;
         $('presenter-counter').textContent = `Pregunta ${sessionData.currentIndex + 1} / ${sessionData.questions.length}`;
+        updateAnsweredCounter();
         // Imagen de la pregunta (quiz presentador)
         const pqImgWrap = $('presenter-question-image');
         const pqImg = $('presenter-q-img');
@@ -1747,6 +1751,21 @@
         updateParticipantsList();
     }
 
+    // v2.9: cuántos participantes respondieron la pregunta actual
+    function updateAnsweredCounter() {
+        const totalPart  = Object.keys(sessionData.participants || {}).length;
+        const answered   = ((sessionData.voters || {})[String(sessionData.currentIndex)] || []).length;
+        if ($('answered-count')) $('answered-count').textContent = answered;
+        if ($('answered-total')) $('answered-total').textContent = totalPart;
+        const badge = $('answered-badge');
+        if (badge) {
+            const all = totalPart > 0 && answered >= totalPart;
+            badge.className = 'text-sm font-bold px-3 py-1 rounded-lg border ' + (all
+                ? 'bg-emerald-500 text-slate-950 border-emerald-400'
+                : 'bg-emerald-900/40 border-emerald-600/60 text-emerald-300');
+        }
+    }
+
     function updateParticipantsList() {
         const parts = sessionData.participants || {};
         const names = Object.values(parts);
@@ -1817,6 +1836,9 @@
     // ── GUARDAR RESULTADOS EN SUPABASE ────────────────────────────────────────
     async function saveSessionResults() {
         if (!cloudId) return;
+        // v2.9: traer las últimas respuestas del servidor antes de guardar resultados
+        const fresh = await fetchData();
+        if (fresh) mergeForPresenter(fresh);
         const questions        = sessionData.questions        || [];
         const participants     = sessionData.participants     || {};
         const participantVotes = sessionData.participantVotes || {};
@@ -2311,22 +2333,31 @@
         examSubmitted = true;
         if (examTimerInt) { clearInterval(examTimerInt); examTimerInt = null; }
 
-        // Recuperar datos frescos para no sobreescribir otros participantes
-        const latest = await fetchData();
-        if (latest) sessionData = latest;
-
-        // Guardar respuestas del participante
-        sessionData.participantVotes = sessionData.participantVotes || {};
-        sessionData.participantVotes[participantId] = {};
-        Object.entries(examAnswers).forEach(([idx, opt]) => {
-            sessionData.participantVotes[participantId][idx] = opt;
-        });
-
-        // Marcar como entregado
-        sessionData.examSubmissions = sessionData.examSubmissions || {};
-        sessionData.examSubmissions[participantId] = { submittedAt: Date.now() };
-
-        await push();
+        // v2.9: entrega atómica en el servidor (no pisa a otros participantes)
+        const answers = {};
+        Object.entries(examAnswers).forEach(([idx, opt]) => { answers[String(idx)] = opt; });
+        let saved = false;
+        for (let intento = 0; intento < 3 && !saved; intento++) {
+            try {
+                const { data, error } = await sb.rpc('ipos_submit_exam', { p_session_id: cloudId, p_pid: participantId, p_answers: answers });
+                if (error && isMissingRpc(error)) {
+                    const latest = await fetchData();
+                    if (latest) adoptServerData(latest);
+                    sessionData.participantVotes = sessionData.participantVotes || {};
+                    sessionData.participantVotes[participantId] = answers;
+                    sessionData.examSubmissions = sessionData.examSubmissions || {};
+                    sessionData.examSubmissions[participantId] = { submittedAt: Date.now() };
+                    saved = await legacyPush();
+                } else if (!error && data && data.status === 'ok') {
+                    adoptServerData(data.data);
+                    saved = true;
+                } else if (error) {
+                    console.warn('[IPOS] submitExam error:', error.message, error.code);
+                }
+            } catch(e) { console.warn('[IPOS] submitExam exception', e); }
+            if (!saved) await new Promise(r => setTimeout(r, 1000));
+        }
+        if (!saved) alert('No se pudo entregar tu examen. Revisa tu conexión y avisa al presentador.');
         renderEndParticipant();  // mostrar resultados
     }
 
@@ -3235,11 +3266,104 @@
     }
 
     // ── SUPABASE PUSH / FETCH ─────────────────────────────────────────────────
+    // v2.9: push() solo lo usa el PRESENTADOR. Envía sus campos y el servidor los
+    // fusiona sin tocar votos/participantes, para no borrar respuestas que lleguen
+    // en ese mismo instante.
     async function push() {
         try {
-            const { error } = await sb.from('quiz_session').update({ data: sessionData }).eq('id', cloudId);
-            if (error) console.warn('[IPOS] push error:', error.message, '| code:', error.code, '| hint:', error.hint);
+            const { data, error } = await sb.rpc('ipos_presenter_update', { p_session_id: cloudId, p_patch: sessionData });
+            if (error) {
+                if (isMissingRpc(error)) return legacyPush();
+                console.warn('[IPOS] push error:', error.message, '| code:', error.code, '| hint:', error.hint);
+            }
         } catch(e) { console.warn('[IPOS] push exception', e); }
+    }
+
+    // Escritura completa del documento (método antiguo). Solo se usa si las
+    // funciones SQL de v2.9 todavía no se instalaron en Supabase.
+    async function legacyPush() {
+        try {
+            const { error } = await sb.from('quiz_session').update({ data: sessionData }).eq('id', cloudId);
+            if (error) { console.warn('[IPOS] push error:', error.message, '| code:', error.code, '| hint:', error.hint); return false; }
+            return true;
+        } catch(e) { console.warn('[IPOS] push exception', e); return false; }
+    }
+
+    function isMissingRpc(error) {
+        const missing = error && (error.code === 'PGRST202' || error.code === '42883');
+        if (missing) console.warn('[IPOS] Funciones SQL v2.9 no instaladas — usando método antiguo (puede perder respuestas simultáneas). Ejecuta supabase_respuestas_atomicas.sql');
+        return missing;
+    }
+
+    // Reemplaza sessionData con el estado devuelto por el servidor, conservando
+    // las preguntas ya normalizadas en este navegador.
+    function adoptServerData(d) {
+        if (!d) return;
+        const qs = sessionData && sessionData.questions;
+        sessionData = d;
+        if (qs) sessionData.questions = qs;
+    }
+
+    // v2.9: registro ATÓMICO de una respuesta. Devuelve true si quedó registrada
+    // (o ya lo estaba), false si hubo error.
+    async function registerAnswer(qIdx, answer, voteKey) {
+        try {
+            const { data, error } = await sb.rpc('ipos_register_answer', {
+                p_session_id: cloudId, p_qidx: qIdx, p_pid: participantId,
+                p_answer: answer, p_vote_key: voteKey
+            });
+            if (error) {
+                if (isMissingRpc(error)) return legacyRegisterAnswer(qIdx, answer, voteKey);
+                console.warn('[IPOS] registerAnswer error:', error.message, error.code);
+                alert('No se pudo registrar tu respuesta. Revisa tu conexión e intenta de nuevo.');
+                return false;
+            }
+            if (!data || data.status === 'not_found') { alert('La sesión ya no existe.'); return false; }
+            adoptServerData(data.data);
+            return true;
+        } catch(e) {
+            console.warn('[IPOS] registerAnswer exception', e);
+            alert('No se pudo registrar tu respuesta. Revisa tu conexión e intenta de nuevo.');
+            return false;
+        }
+    }
+
+    // Método antiguo (leer-modificar-escribir), solo como respaldo.
+    async function legacyRegisterAnswer(qIdx, answer, voteKey) {
+        const latest = await fetchData();
+        if (!latest) { alert('Error de conexión. Intenta de nuevo.'); return false; }
+        adoptServerData(latest);
+        sessionData.voters = sessionData.voters || {};
+        sessionData.votes  = sessionData.votes  || {};
+        const voterList = sessionData.voters[qIdx] || [];
+        if (voterList.includes(participantId)) return true;
+        if (voteKey) sessionData.votes[voteKey] = (sessionData.votes[voteKey] || 0) + 1;
+        sessionData.voters[qIdx] = [...voterList, participantId];
+        sessionData.participantVotes = sessionData.participantVotes || {};
+        sessionData.participantVotes[participantId] = sessionData.participantVotes[participantId] || {};
+        sessionData.participantVotes[participantId][qIdx] = answer;
+        const ok = await legacyPush();
+        if (!ok) alert('No se pudo registrar tu respuesta. Intenta de nuevo.');
+        return ok;
+    }
+
+    // v2.9: registro atómico del participante al entrar.
+    async function registerParticipant(nick) {
+        try {
+            const { data, error } = await sb.rpc('ipos_join_session', { p_session_id: cloudId, p_pid: participantId, p_nick: nick });
+            if (error) {
+                if (isMissingRpc(error)) {
+                    sessionData.participants = sessionData.participants || {};
+                    sessionData.participants[participantId] = nick;
+                    return legacyPush();
+                }
+                console.warn('[IPOS] join error:', error.message, error.code);
+                return false;
+            }
+            if (!data || data.status !== 'ok') return false;
+            adoptServerData(data.data);
+            return true;
+        } catch(e) { console.warn('[IPOS] join exception', e); return false; }
     }
 
     async function fetchData() {
@@ -3391,9 +3515,7 @@
 
         if (sessionData.status === 'ended') { renderEndParticipant(); return; }
 
-        sessionData.participants = sessionData.participants || {};
-        sessionData.participants[participantId] = nick;
-        await push();
+        if (!(await registerParticipant(nick))) { alert('No se pudo registrar tu ingreso. Intenta de nuevo.'); return; }
 
         subscribeRealtime(false);
         startPolling(false);
@@ -3449,9 +3571,7 @@
             return;
         }
 
-        sessionData.participants = sessionData.participants || {};
-        sessionData.participants[participantId] = participantNick;
-        await push();
+        if (!(await registerParticipant(participantNick))) { errEl.textContent = 'No se pudo registrar tu ingreso. Intenta de nuevo.'; errEl.classList.remove('hidden'); return; }
 
         subscribeRealtime(false);
         startPolling(false);
@@ -3730,39 +3850,19 @@
     }
 
     // ── ENVIAR VOTO ───────────────────────────────────────────────────────────
+    let answerInFlight = false;
     async function submitVote(k) {
         const voteKey = `voted_${cloudId}_${sessionData.currentIndex}`;
         if (localStorage.getItem(voteKey)) { alert('¡Ya has registrado tu voto en esta pregunta!'); return; }
-
-        // ── Deduplicación server-side ─────────────────────────────────────────
-        // Obtenemos el estado más reciente antes de votar
-        const latest = await fetchData();
-        if (!latest) { alert('Error de conexión. Intenta de nuevo.'); return; }
-        sessionData = latest;
-
-        const qIdx    = String(sessionData.currentIndex);
-        const voters  = sessionData.voters || {};
-        const voterList = voters[qIdx] || [];
-
-        // Verificar si este participantId ya registró voto en el servidor
-        if (voterList.includes(participantId)) {
-            // Ya votó en el servidor pero no en localStorage → sincronizar
-            localStorage.setItem(voteKey, k);
-            renderParticipantQuestion();
-            return;
-        }
-
-        // Registrar voto
-        const vk = sessionData.currentIndex + '_' + k;
-        sessionData.votes[vk]  = (sessionData.votes[vk] || 0) + 1;
-        sessionData.voters[qIdx] = [...voterList, participantId];
-
-        // Guardar qué opción eligió este participante (para calcular calificaciones al final)
-        sessionData.participantVotes = sessionData.participantVotes || {};
-        sessionData.participantVotes[participantId] = sessionData.participantVotes[participantId] || {};
-        sessionData.participantVotes[participantId][qIdx] = k;
-
-        await push();
+        if (answerInFlight) return;          // evita doble toque mientras se envía
+        answerInFlight = true;
+        let ok = false;
+        try {
+            // v2.9: el servidor suma el voto de forma atómica (sin pérdidas por simultaneidad)
+            const idx = sessionData.currentIndex;
+            ok = await registerAnswer(String(idx), k, idx + '_' + k);
+        } finally { answerInFlight = false; }
+        if (!ok) return;
         localStorage.setItem(voteKey, k); // Guardar localmente
 
         renderParticipantQuestion();
@@ -3773,32 +3873,15 @@
     async function submitLevelVote(level) {
         const voteKey = `voted_${cloudId}_${sessionData.currentIndex}`;
         if (localStorage.getItem(voteKey)) { return; }
-
-        const latest = await fetchData();
-        if (!latest) { alert('Error de conexión. Intenta de nuevo.'); return; }
-        sessionData = latest;
-
-        const qIdx      = String(sessionData.currentIndex);
-        const voters    = sessionData.voters || {};
-        const voterList = voters[qIdx] || [];
-
-        if (voterList.includes(participantId)) {
-            localStorage.setItem(voteKey, String(level));
-            renderParticipantQuestion();
-            return;
-        }
-
-        // Registrar en votes como conteo de niveles: key = qIdx_1..5
-        const vk = sessionData.currentIndex + '_' + level;
-        sessionData.votes[vk] = (sessionData.votes[vk] || 0) + 1;
-        sessionData.voters[qIdx] = [...voterList, participantId];
-
-        // Guardar nivel elegido para cálculo de dimensión
-        sessionData.participantVotes = sessionData.participantVotes || {};
-        sessionData.participantVotes[participantId] = sessionData.participantVotes[participantId] || {};
-        sessionData.participantVotes[participantId][qIdx] = String(level);
-
-        await push();
+        if (answerInFlight) return;
+        answerInFlight = true;
+        let ok = false;
+        try {
+            // v2.9: registro atómico; votes usa key = qIdx_1..5
+            const idx = sessionData.currentIndex;
+            ok = await registerAnswer(String(idx), String(level), idx + '_' + level);
+        } finally { answerInFlight = false; }
+        if (!ok) return;
         localStorage.setItem(voteKey, String(level));
         renderParticipantQuestion();
     }
@@ -3809,27 +3892,14 @@
         if (localStorage.getItem(openKey)) { return; }
 
         const text = ($('open-answer-text') || {}).value || '';
-
-        // Recuperar estado fresco antes de escribir
-        const latest = await fetchData();
-        if (!latest) { alert('Error de conexión. Intenta de nuevo.'); return; }
-        sessionData = latest;
-
-        const qIdx = String(sessionData.currentIndex);
-
-        // Guardar respuesta en participantVotes (texto para preguntas abiertas)
-        sessionData.participantVotes = sessionData.participantVotes || {};
-        sessionData.participantVotes[participantId] = sessionData.participantVotes[participantId] || {};
-        sessionData.participantVotes[participantId][qIdx] = text || '(sin respuesta)';
-
-        // Registrar en voters para deduplicación (misma lógica que MC)
-        sessionData.voters = sessionData.voters || {};
-        const voterList = sessionData.voters[qIdx] || [];
-        if (!voterList.includes(participantId)) {
-            sessionData.voters[qIdx] = [...voterList, participantId];
-        }
-
-        await push();
+        if (answerInFlight) return;
+        answerInFlight = true;
+        let ok = false;
+        try {
+            // v2.9: registro atómico (texto en participantVotes, sin contador en votes)
+            ok = await registerAnswer(String(sessionData.currentIndex), text || '(sin respuesta)', null);
+        } finally { answerInFlight = false; }
+        if (!ok) return;
         localStorage.setItem(openKey, text || '(sin respuesta)');
 
         renderParticipantQuestion();
