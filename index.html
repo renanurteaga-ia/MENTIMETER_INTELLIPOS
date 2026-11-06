@@ -746,17 +746,17 @@
                 <p id="grading-ai-status" class="text-xs text-slate-500">Selecciona una IA registrada para activar las sugerencias.</p>
             </div>
             <div id="grading-content" class="space-y-6"></div>
-            <div class="flex items-center gap-3">
-                <button onclick="saveGrades()"
-                    class="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg transition text-sm">
+            <!-- v3.5: acciones de calificación según el estado (pendiente / guardado / con cambios) -->
+            <div class="space-y-3">
+                <button id="btn-save-grades" onclick="saveGrades()"
+                    class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg transition text-sm">
                     <i class="fa-solid fa-floppy-disk mr-2"></i>Guardar calificaciones
                 </button>
-                <button onclick="downloadReportExcel()"
-                    class="px-4 py-3 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg transition text-sm whitespace-nowrap"
-                    title="Descargar reporte Excel">
-                    <i class="fa-solid fa-file-excel"></i>
+                <button id="btn-grading-excel" onclick="downloadReportExcel()"
+                    class="hidden w-full py-3 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg transition text-sm">
+                    <i class="fa-solid fa-file-excel mr-2"></i>Descargar resultados (Excel)
                 </button>
-                <span id="grading-save-status" class="text-xs text-slate-400"></span>
+                <p id="grading-save-status" class="text-xs text-slate-400 text-center"></p>
             </div>
         </section>
 
@@ -4341,6 +4341,7 @@
         showView('view-grading');
         $('grading-session-name').textContent = sessionData.name || '';
         $('grading-save-status').textContent = '';
+        setGradingState('pending');
         gradingData = {};
         gradingResults = [];
 
@@ -4368,6 +4369,8 @@
         }
         gradingResults = data;
         renderGradingPanel();
+        // Si la sesión ya fue calificada antes, mostrar directamente la descarga
+        if (data.some(r => r.calificado_en)) setGradingState('saved');
     }
 
     function renderGradingPanel() {
@@ -4458,7 +4461,33 @@
         document.querySelectorAll('#grading-content .grading-anot').forEach(autoGrowTextarea);
     }
 
+    // v3.5: estado de los botones de la pantalla de calificación
+    let gradingState = 'pending';
+    function setGradingState(state) {
+        gradingState = state;
+        const save = $('btn-save-grades'), xl = $('btn-grading-excel'), st = $('grading-save-status');
+        if (!save || !xl) return;
+        const base = 'w-full py-3 font-bold rounded-xl shadow-lg transition text-sm ';
+        if (state === 'saved') {
+            save.disabled = true;
+            save.className = base + 'bg-slate-700 text-emerald-300 cursor-default shadow-none';
+            save.innerHTML = '<i class="fa-solid fa-circle-check mr-2"></i>Calificaciones guardadas';
+            xl.classList.remove('hidden');
+            if (st) { st.textContent = 'Si cambias alguna nota o anotación, podrás volver a guardar.'; st.style.color = ''; }
+        } else {
+            save.disabled = false;
+            save.className = base + 'bg-indigo-600 hover:bg-indigo-500 text-white';
+            save.innerHTML = '<i class="fa-solid fa-floppy-disk mr-2"></i>' + (state === 'dirty' ? 'Guardar cambios' : 'Guardar calificaciones');
+            xl.classList.toggle('hidden', state !== 'dirty');
+            if (st) {
+                st.textContent = state === 'dirty' ? '⚠️ Tienes cambios sin guardar. El Excel muestra lo último que guardaste.' : '';
+                st.style.color = state === 'dirty' ? '#fbbf24' : '';
+            }
+        }
+    }
+
     function updateGrading(pid, idx, field, val) {
+        if (gradingState === 'saved') setGradingState('dirty');
         if (!gradingData[pid]) gradingData[pid] = {};
         if (!gradingData[pid][idx]) gradingData[pid][idx] = { pts: 0, anotacion: '' };
         if (field === 'pts') gradingData[pid][idx].pts = Math.max(0, parseFloat(val) || 0);
@@ -4592,8 +4621,7 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
                 statusEl.textContent = `⚠️ Error al guardar: ${msg}`;
                 statusEl.style.color = '#f87171';
             } else {
-                statusEl.textContent = '✅ Calificaciones guardadas correctamente';
-                statusEl.style.color = '';
+                setGradingState('saved');
                 // v3.3: refrescar la copia local con lo que quedó guardado
                 const { data: fresh } = await sb.from('session_results').select('*').eq('quiz_session_id', cloudId);
                 if (fresh && fresh.length) gradingResults = fresh;
