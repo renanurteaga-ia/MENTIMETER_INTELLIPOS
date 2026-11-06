@@ -1977,10 +1977,20 @@
 
         try {
             const { error } = await sb.from('session_results').insert(rows);
-            if (error) console.error('Error guardando resultados de sesión:', error);
-            else console.log('Resultados guardados:', rows.length, 'participantes');
+            if (error) {
+                console.error('Error guardando resultados de sesión:', error);
+                // v3.1: avisar al presentador en lugar de fallar en silencio
+                alert('⚠️ No se pudieron guardar los resultados de esta sesión en la base de datos.\n\n' +
+                      'Detalle: ' + (error.message || error.code || 'error desconocido') + '\n\n' +
+                      'Las respuestas siguen en la sesión. Avisa al administrador antes de cerrar esta ventana.');
+                return false;
+            }
+            console.log('Resultados guardados:', rows.length, 'participantes');
+            return true;
         } catch(e) {
             console.error('Error guardando resultados de sesión:', e);
+            alert('⚠️ No se pudieron guardar los resultados de esta sesión: ' + (e.message || e));
+            return false;
         }
     }
 
@@ -4335,9 +4345,17 @@
         populateGradingAiSelect();
 
         // Cargar resultados de Supabase
-        const { data, error } = await sb.from('session_results')
+        let { data, error } = await sb.from('session_results')
             .select('*')
             .eq('quiz_session_id', cloudId);
+        // v3.1: si no hay resultados guardados pero la sesión tiene participantes,
+        // intentar generarlos ahora desde las respuestas de la sesión.
+        if (!error && (!data || data.length === 0) && Object.keys(sessionData.participants || {}).length > 0) {
+            $('grading-content').innerHTML = `<p class="text-slate-400 text-sm">Generando resultados desde la sesión…</p>`;
+            if (await saveSessionResults()) {
+                ({ data, error } = await sb.from('session_results').select('*').eq('quiz_session_id', cloudId));
+            }
+        }
         if (error || !data || data.length === 0) {
             $('grading-content').innerHTML = `<p class="text-slate-400 text-sm">No se encontraron resultados guardados para esta sesión.</p>`;
             return;
