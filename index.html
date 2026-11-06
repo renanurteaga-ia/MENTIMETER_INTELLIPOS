@@ -3780,7 +3780,13 @@
         // Normalizar tipo de preguntas en cada actualización (compat. con quizzes sin campo 'tipo')
         if (sessionData.questions) sessionData.questions = normalizarPreguntas(sessionData.questions);
 
-        if (sessionData.status === 'ended') { renderEndParticipant(); return; }
+        if (sessionData.status === 'ended') {
+            // v3.2: si el participante ya abrió su boleta (nota final), no volver a
+            // dibujar la pantalla de fin encima de ella en cada consulta periódica.
+            const boleta = $('view-boleta');
+            if (boleta && !boleta.classList.contains('hidden')) return;
+            renderEndParticipant(); return;
+        }
 
         // Transición lobby → activo (cuestionario) o exam-active (examen)
         if (prevStatus === 'lobby') {
@@ -4579,6 +4585,9 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
             } else {
                 statusEl.textContent = '✅ Calificaciones guardadas correctamente';
                 statusEl.style.color = '';
+                // v3.3: refrescar la copia local con lo que quedó guardado
+                const { data: fresh } = await sb.from('session_results').select('*').eq('quiz_session_id', cloudId);
+                if (fresh && fresh.length) gradingResults = fresh;
             }
         } catch(e) {
             statusEl.textContent = '⚠️ Error inesperado al guardar. Revisa la consola.';
@@ -4602,6 +4611,10 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
     async function loadBoleta(sessionId, pid) {
         _boletaSessionId = sessionId;
         _boletaPid       = pid;
+        // v3.2: la sesión ya terminó; detener la consulta periódica y el tiempo real
+        // para que no reemplacen la boleta por la pantalla de fin.
+        if (fallbackInt) { clearInterval(fallbackInt); fallbackInt = null; }
+        if (rtChannel) { try { sb.removeChannel(rtChannel); } catch(_) {} rtChannel = null; }
         showView('view-boleta');
         $('role-badge').textContent = 'Boleta';
         const refreshBtn = $('btn-refresh-boleta');
@@ -4764,10 +4777,12 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
         // v3.0: el autodiagnóstico ponderado tiene su propio reporte (sin notas ni aprobados)
         if ((sessionData.questions || []).some(q => q.tipo === 'ponderada')) { downloadPondExcel(); return; }
 
-        // Cargar resultados desde Supabase (usa gradingResults si ya están, si no los carga)
-        let results = gradingResults && gradingResults.length > 0 ? gradingResults : null;
-        if (!results) {
-            const { data } = await sb.from('session_results').select('*').eq('quiz_session_id', cloudId);
+        // v3.3: leer SIEMPRE los resultados actuales de Supabase. Antes reutilizaba la copia
+        // cargada al entrar a calificar, que no incluía las notas guardadas después.
+        let results;
+        {
+            const { data, error } = await sb.from('session_results').select('*').eq('quiz_session_id', cloudId);
+            if (error) { alert('No se pudieron leer los resultados para el reporte: ' + error.message); return; }
             results = data || [];
         }
 
