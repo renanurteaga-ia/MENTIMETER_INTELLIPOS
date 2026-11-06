@@ -4444,9 +4444,9 @@
                     ${texto
                         ? `<p class="text-xs text-slate-300 italic bg-slate-800/60 rounded-lg p-2">"${texto}"</p>`
                         : `<p class="text-xs text-slate-500 italic">Sin respuesta</p>`}
-                    <textarea id="anot-${pid}-${idx}" rows="2" placeholder="Anotación para el estudiante (opcional)…"
-                        oninput="updateGrading('${pid}',${idx},'anotacion',this.value)"
-                        class="w-full text-xs p-2 bg-slate-800 border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500">${curAnot}</textarea>
+                    <textarea id="anot-${pid}-${idx}" rows="3" placeholder="Anotación para el estudiante (opcional)…"
+                        oninput="updateGrading('${pid}',${idx},'anotacion',this.value); autoGrowTextarea(this)"
+                        class="grading-anot w-full text-xs p-2 bg-slate-800 border border-slate-600 rounded-lg text-slate-200 placeholder-slate-500 resize-y leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500">${curAnot}</textarea>
                     <p id="suggest-status-${pid}-${idx}" class="text-xs text-amber-400 hidden"></p>
                 </div>`;
             });
@@ -4455,6 +4455,7 @@
         });
 
         $('grading-content').innerHTML = html;
+        document.querySelectorAll('#grading-content .grading-anot').forEach(autoGrowTextarea);
     }
 
     function updateGrading(pid, idx, field, val) {
@@ -4527,10 +4528,18 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
                 anotInput.value = justif;
                 updateGrading(pid, idx, 'anotacion', justif);
             }
+            if (anotInput) autoGrowTextarea(anotInput);
         } catch(e) {
             statusEl.textContent = `⚠️ Error: ${e.message}. Verifica la IA seleccionada.`;
             console.error('AI grading error:', e);
         }
+    }
+
+    // v3.4: la anotación crece hasta mostrar todo el texto (sin scroll interno)
+    function autoGrowTextarea(el) {
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = (el.scrollHeight + 2) + 'px';
     }
 
     async function saveGrades() {
