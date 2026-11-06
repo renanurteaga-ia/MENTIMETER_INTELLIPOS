@@ -1886,7 +1886,11 @@
                         respuesta_dada:   respuestaDada,
                         correcta:         null,
                         puntaje_obtenido: pts,
-                        puntaje_maximo:   Math.max(q.puntajeA||0, q.puntajeB||0, q.puntajeC||0, q.puntajeD||0)
+                        puntaje_maximo:   pondMaxPts(q),
+                        // v3.0: textos para la boleta (fortalezas y oportunidades)
+                        pregunta:          q.pregunta || '',
+                        respuesta_texto:   respuestaDada ? (q['opcion' + respuestaDada] || '') : '',
+                        alternativa_texto: pondBestKey(q) ? (q['opcion' + pondBestKey(q)] || '') : ''
                     };
                 }
 
@@ -2370,6 +2374,486 @@
     }
 
     // ── PANTALLA FINAL: PRESENTADOR ───────────────────────────────────────────
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // v3.0 — AUTODIAGNÓSTICO PONDERADO: estadísticas propias (no de examen)
+    // Las preguntas ponderadas no tienen respuesta correcta: cada opción vale
+    // puntos según el nivel de la reacción. Las estadísticas muestran perfiles,
+    // situaciones críticas y oportunidades, sin ranking ni comparaciones de nota.
+    // ════════════════════════════════════════════════════════════════════════════
+
+    const POND_KEYS = ['A', 'B', 'C', 'D'];
+
+    function pondEsc(s) {
+        return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    function pondFmt(n, d = 1) {
+        if (n === null || n === undefined || isNaN(n)) return '—';
+        return (Math.round(n * Math.pow(10, d)) / Math.pow(10, d)).toLocaleString('es-PE');
+    }
+    function pondOptKeys(q) { return POND_KEYS.filter(k => q['opcion' + k]); }
+    function pondPts(q, k) { return Number(q['puntaje' + k]) || 0; }
+    function pondMaxPts(q) { const ks = pondOptKeys(q); return ks.length ? Math.max(...ks.map(k => pondPts(q, k))) : 0; }
+    function pondPtsLbl(n) { return `${n} ${Number(n) === 1 ? 'pt' : 'pts'}`; }
+    function pondBestKey(q) { const m = pondMaxPts(q); return pondOptKeys(q).find(k => pondPts(q, k) === m) || null; }
+
+    // Color según qué tan alto es el puntaje respecto al máximo de la pregunta
+    function pondLevelColor(pts, max) {
+        const r = max > 0 ? pts / max : 0;
+        if (r >= 0.999) return { bar: '#10b981', text: 'text-emerald-300', light: '#059669' };
+        if (r >= 0.5)   return { bar: '#38bdf8', text: 'text-sky-300',     light: '#0284c7' };
+        if (r > 0)      return { bar: '#f59e0b', text: 'text-amber-300',   light: '#d97706' };
+        return            { bar: '#f43f5e', text: 'text-rose-300',    light: '#e11d48' };
+    }
+
+    // Cálculo central: se usa en la pantalla del presentador, del participante, PDF y Excel
+    function pondAnalytics() {
+        const questions    = sessionData.questions || [];
+        const participants = sessionData.participants || {};
+        const pv           = sessionData.participantVotes || {};
+        const rangos       = sessionData.rangos || [];
+        const pq           = questions.map((q, idx) => ({ q, idx })).filter(x => x.q.tipo === 'ponderada');
+        const maxTotal     = pq.reduce((s, { q }) => s + pondMaxPts(q), 0);
+
+        // Niveles de puntaje presentes (ej. 3, 2, 1, 0), de mayor a menor
+        const levelSet = new Set();
+        pq.forEach(({ q }) => pondOptKeys(q).forEach(k => levelSet.add(pondPts(q, k))));
+        const levels  = [...levelSet].sort((a, b) => b - a);
+        const topLvl  = levels.length ? levels[0] : 0;
+
+        const people = Object.entries(participants).map(([pid, nick]) => {
+            const votes = pv[pid] || {};
+            let total = 0, answered = 0;
+            const levelCount = {}; levels.forEach(l => levelCount[l] = 0);
+            const fortalezas = [], oportunidades = [], intermedias = [];
+            pq.forEach(({ q, idx }) => {
+                const k = votes[String(idx)];
+                if (!k || !q['opcion' + k]) return;
+                const pts = pondPts(q, k), max = pondMaxPts(q);
+                total += pts; answered++;
+                levelCount[pts] = (levelCount[pts] || 0) + 1;
+                const item = { idx, q, key: k, pts, max, bestKey: pondBestKey(q) };
+                if (pts >= max) fortalezas.push(item);
+                else if (pts < max / 2) oportunidades.push(item);
+                else intermedias.push(item);
+            });
+            const rango = answered > 0 ? (rangos.find(r => total >= r.min && total <= r.max) || null) : null;
+            const topCount = pq.reduce((s, { q, idx }) => {
+                const k = votes[String(idx)]; return s + (k && q['opcion' + k] && pondPts(q, k) >= pondMaxPts(q) ? 1 : 0);
+            }, 0);
+            oportunidades.sort((a, b) => (a.pts / (a.max || 1)) - (b.pts / (b.max || 1)));
+            return { pid, nick, total, answered, rango, levelCount, topCount, fortalezas, oportunidades, intermedias };
+        });
+
+        const resp = people.filter(p => p.answered > 0);
+        const totals = resp.map(p => p.total).sort((a, b) => a - b);
+        const n = totals.length;
+        const avgTotal = n ? totals.reduce((s, x) => s + x, 0) / n : null;
+        const median   = n ? (n % 2 ? totals[(n - 1) / 2] : (totals[n / 2 - 1] + totals[n / 2]) / 2) : null;
+
+        // Distribución de niveles sobre TODAS las respuestas del grupo
+        const levelTotals = {}; levels.forEach(l => levelTotals[l] = 0);
+        let totalResponses = 0, topResponses = 0;
+        resp.forEach(p => {
+            levels.forEach(l => levelTotals[l] += (p.levelCount[l] || 0));
+            totalResponses += p.answered; topResponses += p.topCount;
+        });
+
+        // Distribución por rango
+        const rangoDist = rangos.map(r => ({ ...r, count: resp.filter(p => p.rango && p.rango.nombre === r.nombre).length }));
+
+        // Análisis por situación (pregunta)
+        const situaciones = pq.map(({ q, idx }) => {
+            const max = pondMaxPts(q), counts = {};
+            pondOptKeys(q).forEach(k => counts[k] = 0);
+            let nAns = 0, sum = 0;
+            resp.forEach(p => {
+                const k = (pv[p.pid] || {})[String(idx)];
+                if (!k || counts[k] === undefined) return;
+                counts[k]++; nAns++; sum += pondPts(q, k);
+            });
+            const keys = pondOptKeys(q);
+            const modalKey = nAns ? keys.reduce((a, k) => (counts[k] > counts[a] ? k : a), keys[0]) : null;
+            const share = k => nAns ? counts[k] / nAns : 0;
+            const pctTop = nAns ? keys.filter(k => pondPts(q, k) >= max).reduce((s, k) => s + share(k), 0) : 0;
+            const pctLow = nAns ? keys.filter(k => pondPts(q, k) < max / 2).reduce((s, k) => s + share(k), 0) : 0;
+            return {
+                idx, q, max, counts, nAns, keys,
+                avg: nAns ? sum / nAns : null,
+                avgPct: nAns && max ? sum / nAns / max : null,
+                modalKey, modalShare: modalKey ? share(modalKey) : 0,
+                bestKey: pondBestKey(q), pctTop, pctLow,
+                dividida: nAns >= 4 && pctTop >= 0.25 && pctLow >= 0.25,
+            };
+        });
+        const conDatos = situaciones.filter(s => s.nAns > 0);
+        const ordenadas = [...conDatos].sort((a, b) => a.avgPct - b.avgPct);
+
+        return {
+            pq, rangos, levels, topLvl, maxTotal, people, resp, n,
+            avgTotal, median, minTotal: n ? totals[0] : null, maxTotalObt: n ? totals[n - 1] : null,
+            levelTotals, totalResponses, topResponses,
+            pctTop: totalResponses ? topResponses / totalResponses : null,
+            rangoDist, situaciones, ordenadas,
+            criticas:   ordenadas.slice(0, Math.min(5, ordenadas.length)).filter(s => s.avgPct < 0.85),
+            fortalezas: [...ordenadas].reverse().slice(0, 3).filter(s => s.avgPct >= 0.5),
+            divididas:  conDatos.filter(s => s.dividida).sort((a, b) => Math.min(b.pctTop, b.pctLow) - Math.min(a.pctTop, a.pctLow)).slice(0, 4),
+        };
+    }
+
+    // ── Piezas visuales reutilizables (tema oscuro) ─────────────────────────────
+    function pondStackBar(parts, h = 'h-3') {
+        const total = parts.reduce((s, p) => s + p.value, 0);
+        if (!total) return `<div class="${h} bg-slate-700 rounded-full"></div>`;
+        return `<div class="flex ${h} rounded-full overflow-hidden bg-slate-700">${parts.filter(p => p.value > 0).map(p =>
+            `<div title="${pondEsc(p.label)}: ${p.value}" style="width:${p.value / total * 100}%;background:${p.color}"></div>`).join('')}</div>`;
+    }
+    function pondLevelLegend(A, counts, totalLabel) {
+        const tot = A.levels.reduce((s, l) => s + (counts[l] || 0), 0);
+        return `<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs mt-2">${A.levels.map(l => {
+            const c = pondLevelColor(l, A.topLvl), v = counts[l] || 0;
+            return `<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm inline-block" style="background:${c.bar}"></span>
+                <span class="text-slate-300">${pondPtsLbl(l)}</span><span class="text-slate-500">${v}${tot ? ` (${Math.round(v / tot * 100)}%)` : ''}</span></span>`;
+        }).join('')}${totalLabel ? `<span class="text-slate-500 ml-auto">${totalLabel}</span>` : ''}</div>`;
+    }
+    function pondLevelParts(A, counts) {
+        return A.levels.map(l => ({ label: pondPtsLbl(l), value: counts[l] || 0, color: pondLevelColor(l, A.topLvl).bar }));
+    }
+    function pondOptionParts(s) {
+        return [...s.keys].sort((a, b) => pondPts(s.q, b) - pondPts(s.q, a)).map(k => ({ label: `${k} (${pondPtsLbl(pondPts(s.q, k))})`, value: s.counts[k], color: pondLevelColor(pondPts(s.q, k), s.max).bar }));
+    }
+    function pondRangeScale(A, total) {
+        const rs = [...A.rangos].sort((a, b) => a.min - b.min);
+        if (!rs.length || !A.maxTotal) return '';
+        const span = Math.max(A.maxTotal, ...rs.map(r => r.max));
+        const pos = total !== null && total !== undefined ? Math.min(100, Math.max(0, total / span * 100)) : null;
+        return `<div class="space-y-1">
+            <div class="relative pt-5">
+                ${pos !== null ? `<div class="absolute top-0 -translate-x-1/2 text-xs font-bold text-white" style="left:${pos}%">▼ ${total}</div>` : ''}
+                <div class="flex h-3 rounded-full overflow-hidden">${rs.map((r, i) =>
+                    `<div style="width:${(r.max - r.min + 1) / (span + 1) * 100}%;background:${pondLevelColor(i, rs.length - 1).bar}" title="${pondEsc(r.nombre)}"></div>`).join('')}</div>
+            </div>
+            <div class="flex text-[10px] text-slate-500">${rs.map(r =>
+                `<div style="width:${(r.max - r.min + 1) / (span + 1) * 100}%" class="px-0.5 leading-tight truncate" title="${pondEsc(r.nombre)}">${r.min}–${r.max}</div>`).join('')}</div>
+        </div>`;
+    }
+    function pondRangoCard(rango) {
+        if (!rango) return '';
+        return `<div class="bg-violet-950/60 border border-violet-600/50 rounded-2xl p-5 text-center shadow-xl space-y-1">
+            <p class="text-xs text-violet-300 uppercase tracking-wider font-semibold">Tu diagnóstico</p>
+            <p class="text-2xl font-extrabold text-violet-200">${pondEsc(rango.nombre)}</p>
+            ${rango.diagnostico ? `<p class="text-sm text-slate-300 mt-2">${pondEsc(rango.diagnostico)}</p>` : ''}
+            ${rango.tu_realidad ? `<div class="text-left mt-3 p-3 bg-slate-800/60 rounded-xl border-l-4 border-violet-500"><p class="text-xs font-bold text-violet-400 uppercase mb-1">Tu realidad</p><p class="text-xs text-slate-300">${pondEsc(rango.tu_realidad)}</p></div>` : ''}
+            ${rango.tu_reto ? `<div class="text-left mt-2 p-3 bg-slate-800/60 rounded-xl border-l-4 border-amber-500"><p class="text-xs font-bold text-amber-400 uppercase mb-1">Tu reto</p><p class="text-xs text-slate-300">${pondEsc(rango.tu_reto)}</p></div>` : ''}
+            ${rango.recuerda ? `<div class="text-left mt-2 p-3 bg-slate-800/60 rounded-xl border-l-4 border-emerald-500"><p class="text-xs font-bold text-emerald-400 uppercase mb-1">Recuerda</p><p class="text-xs text-slate-300">${pondEsc(rango.recuerda)}</p></div>` : ''}
+        </div>`;
+    }
+    const pondCard = (inner, extra = '') => `<div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl space-y-3 ${extra}">${inner}</div>`;
+    const pondTitle = (t, sub) => `<div><p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">${t}</p>${sub ? `<p class="text-xs text-slate-500 mt-0.5">${sub}</p>` : ''}</div>`;
+
+    // ── PANTALLA DEL PRESENTADOR ───────────────────────────────────────────────
+    function renderPondPresenter() {
+        const A = pondAnalytics();
+        const stat = (val, lbl, color = 'text-white', sub = '') => `<div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 text-center">
+            <p class="text-2xl font-extrabold ${color}">${val}</p>${sub ? `<p class="text-xs text-slate-500">${sub}</p>` : ''}
+            <p class="text-xs text-slate-400 mt-1">${lbl}</p></div>`;
+
+        const rangoHtml = A.rangoDist.map(r => {
+            const pct = A.n ? Math.round(r.count / A.n * 100) : 0;
+            return `<div class="space-y-1">
+                <div class="flex items-center justify-between text-xs gap-2">
+                    <span class="font-semibold text-violet-300">${pondEsc(r.nombre)} <span class="font-normal text-slate-500">(${r.min}–${r.max} pts)</span></span>
+                    <span class="text-white font-bold shrink-0">${r.count} <span class="text-slate-400 font-normal">(${pct}%)</span></span>
+                </div>
+                <div class="h-2 bg-slate-700 rounded-full overflow-hidden"><div class="h-full rounded-full bg-violet-500" style="width:${pct}%"></div></div>
+            </div>`;
+        }).join('');
+
+        const sitCard = (s, mode) => {
+            const mk = s.modalKey, bk = s.bestKey;
+            return `<div class="p-3 rounded-xl bg-slate-900/60 border border-slate-700/60 space-y-2">
+                <div class="flex justify-between gap-3">
+                    <p class="text-sm font-semibold text-slate-200">${s.idx + 1}. ${pondEsc(s.q.pregunta)}</p>
+                    <span class="text-xs font-bold ${pondLevelColor(s.avg, s.max).text} shrink-0">${pondFmt(s.avg)} / ${s.max}</span>
+                </div>
+                ${pondStackBar(pondOptionParts(s), 'h-2')}
+                ${mode === 'critica' && mk && mk === bk ? `<p class="text-xs text-slate-400">La reacción más elegida (${Math.round(s.modalShare * 100)}%) ya es la de mayor puntaje, pero el resto del grupo se reparte en reacciones de menor puntaje.</p>` : ''}
+                ${mode === 'critica' && mk && mk !== bk ? `<p class="text-xs text-slate-400">Reacción más elegida (${Math.round(s.modalShare * 100)}%): <span class="text-slate-200">«${pondEsc(s.q['opcion' + mk])}»</span> <span class="${pondLevelColor(pondPts(s.q, mk), s.max).text}">(${pondPtsLbl(pondPts(s.q, mk))})</span></p>` : ''}
+                ${mode !== 'fortaleza' && bk && !(mode === 'critica' && mk === bk) ? `<p class="text-xs text-slate-500">Reacción de mayor puntaje, elegida por el ${Math.round(s.pctTop * 100)}%: <span class="text-emerald-300/90">«${pondEsc(s.q['opcion' + bk])}»</span></p>` : ''}
+                ${mode === 'fortaleza' ? `<p class="text-xs text-slate-400">El ${Math.round(s.pctTop * 100)}% eligió la reacción de mayor puntaje.</p>` : ''}
+                ${mode === 'dividida' ? `<p class="text-xs text-amber-300/90">Grupo dividido: ${Math.round(s.pctTop * 100)}% en la reacción de mayor puntaje y ${Math.round(s.pctLow * 100)}% en reacciones de puntaje bajo.</p>` : ''}
+            </div>`;
+        };
+
+        const mapaRows = A.ordenadas.map(s => `<div class="grid grid-cols-12 gap-2 items-center text-xs py-1 border-b border-slate-700/30">
+            <span class="col-span-6 text-slate-300 truncate" title="${pondEsc(s.q.pregunta)}">${s.idx + 1}. ${pondEsc(s.q.pregunta)}</span>
+            <div class="col-span-4">${pondStackBar(pondOptionParts(s), 'h-2')}</div>
+            <span class="col-span-2 text-right font-bold ${pondLevelColor(s.avg, s.max).text}">${pondFmt(s.avg)} / ${s.max}</span>
+        </div>`).join('');
+
+        const partRows = [...A.people].sort((a, b) => a.nick.localeCompare(b.nick, 'es')).map(p => `<tr class="border-b border-slate-700/40 text-xs">
+            <td class="py-1.5 pr-2 text-white">${pondEsc(p.nick)}</td>
+            <td class="py-1.5 pr-2 text-violet-300">${p.answered ? pondEsc(p.rango ? p.rango.nombre : 'Sin rango') : '<span class="text-slate-500 italic">Sin respuestas</span>'}</td>
+            <td class="py-1.5 pr-2 text-right text-slate-300">${p.answered ? p.total : '—'}</td>
+            <td class="py-1.5 text-right text-slate-400">${p.answered ? `${p.topCount}/${p.answered}` : '—'}</td>
+        </tr>`).join('');
+
+        $('ended-content').innerHTML = `
+        <div class="space-y-5 w-full fade-in">
+            <div class="text-center space-y-1">
+                <div class="text-4xl">🧭</div>
+                <h2 class="text-2xl font-extrabold text-white">Resultados del autodiagnóstico</h2>
+                <p class="text-slate-400 text-sm">${pondEsc(sessionData.name || '')}</p>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                ${stat(A.n, 'Participantes con respuestas', 'text-indigo-400')}
+                ${stat(`${pondFmt(A.avgTotal)}`, 'Promedio del grupo', 'text-violet-300', `de ${A.maxTotal} · ${A.avgTotal !== null && A.maxTotal ? Math.round(A.avgTotal / A.maxTotal * 100) + '%' : '—'}`)}
+                ${stat(pondFmt(A.median), 'Mediana', 'text-violet-300')}
+                ${stat(A.n ? `${A.minTotal}–${A.maxTotalObt}` : '—', 'Rango de puntajes', 'text-slate-200', 'mínimo – máximo')}
+            </div>
+
+            ${A.rangoDist.length ? pondCard(pondTitle('Perfil del grupo', '¿En qué diagnóstico se ubicó cada persona?') + rangoHtml) : ''}
+
+            ${pondCard(pondTitle('Las reacciones del grupo', `Las ${A.totalResponses} respuestas de todo el grupo, según su puntaje`) + `
+                <p class="text-sm text-slate-200">El <span class="font-extrabold text-emerald-300">${A.pctTop !== null ? Math.round(A.pctTop * 100) : 0}%</span> de las reacciones del grupo fueron de mayor puntaje (${pondPtsLbl(A.topLvl)}).</p>
+                ${pondStackBar(pondLevelParts(A, A.levelTotals))}
+                ${pondLevelLegend(A, A.levelTotals)}`)}
+
+            ${A.criticas.length ? pondCard(pondTitle('Situaciones críticas', 'Donde el grupo obtuvo menor puntaje. Son las mejores candidatas para el debate en clase.') + A.criticas.map(s => sitCard(s, 'critica')).join('')) : ''}
+
+            ${A.divididas.length ? pondCard(pondTitle('Situaciones que dividen al grupo', 'Unos eligieron la reacción de mayor puntaje y otros una de puntaje bajo: suelen generar las conversaciones más ricas.') + A.divididas.map(s => sitCard(s, 'dividida')).join('')) : ''}
+
+            ${A.fortalezas.length ? pondCard(pondTitle('Fortalezas del grupo', 'Situaciones donde la mayoría reaccionó con mayor puntaje.') + A.fortalezas.map(s => sitCard(s, 'fortaleza')).join('')) : ''}
+
+            ${A.ordenadas.length ? pondCard(`<details>
+                <summary class="cursor-pointer text-xs font-semibold text-slate-400 uppercase tracking-wider">Mapa completo de situaciones (${A.ordenadas.length}) <span class="normal-case font-normal text-slate-500">· de menor a mayor puntaje promedio</span></summary>
+                <div class="mt-3">${mapaRows}</div>
+                <div class="flex flex-wrap gap-x-4 text-[11px] text-slate-500 mt-2">${A.levels.map(l => `<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm inline-block" style="background:${pondLevelColor(l, A.topLvl).bar}"></span>Opción de ${pondPtsLbl(l)}</span>`).join('')}</div>
+            </details>`) : ''}
+
+            ${pondCard(`<details>
+                <summary class="cursor-pointer text-xs font-semibold text-slate-400 uppercase tracking-wider"><i class="fa-solid fa-lock mr-1"></i>Resultados individuales (vista privada) <span class="normal-case font-normal text-slate-500">· no proyectar</span></summary>
+                <table class="w-full mt-3"><thead><tr class="text-[11px] text-slate-500 text-left">
+                    <th class="pb-1 font-normal">Participante</th><th class="pb-1 font-normal">Diagnóstico</th><th class="pb-1 font-normal text-right">Puntaje</th><th class="pb-1 font-normal text-right">Mayor puntaje</th>
+                </tr></thead><tbody>${partRows || '<tr><td class="text-slate-500 italic text-sm py-2">No hubo participantes.</td></tr>'}</tbody></table>
+            </details>`)}
+
+            <button onclick="downloadReportExcel()" class="w-full py-3 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg transition text-sm">
+                <i class="fa-solid fa-file-excel mr-2"></i>Descargar reporte Excel
+            </button>
+            <button onclick="resetApp()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">Volver al inicio</button>
+        </div>`;
+    }
+
+    // ── PANTALLA DEL PARTICIPANTE ──────────────────────────────────────────────
+    function renderPondParticipant() {
+        const A  = pondAnalytics();
+        const me = A.people.find(p => p.pid === participantId) || null;
+
+        if (!me || !me.answered) {
+            $('ended-content').innerHTML = `<div class="space-y-4 w-full max-w-sm mx-auto text-center fade-in">
+                <div class="text-5xl">🧭</div><h2 class="text-xl font-extrabold text-white">¡Sesión finalizada!</h2>
+                <p class="text-slate-400 text-sm">No hay respuestas tuyas registradas en este autodiagnóstico.</p>
+                <button onclick="resetApp()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">Volver al inicio</button></div>`;
+            return;
+        }
+
+        const optLine = (it, k, label, cls) => `<p class="text-xs ${cls}"><span class="text-slate-500">${label}</span> «${pondEsc(it.q['opcion' + k])}» <span class="opacity-80">(${pondPtsLbl(pondPts(it.q, k))})</span></p>`;
+        const fortHtml = me.fortalezas.map(it => `<li class="text-xs text-slate-300 py-1 border-b border-slate-700/30"><span class="text-emerald-400">✓</span> ${pondEsc(it.q.pregunta)}</li>`).join('');
+        const opHtml = me.oportunidades.map(it => `<div class="p-3 rounded-xl bg-slate-900/60 border border-slate-700/60 space-y-1.5">
+            <p class="text-sm font-semibold text-slate-200">${it.idx + 1}. ${pondEsc(it.q.pregunta)}</p>
+            ${optLine(it, it.key, 'Tu reacción:', pondLevelColor(it.pts, it.max).text)}
+            ${it.bestKey ? optLine(it, it.bestKey, 'Alternativa de mayor puntaje:', 'text-emerald-300') : ''}
+        </div>`).join('');
+        const myPctTop = me.answered ? Math.round(me.topCount / me.answered * 100) : 0;
+        const grpPctTop = A.pctTop !== null ? Math.round(A.pctTop * 100) : null;
+        const grupoRangos = A.rangoDist.map(r => {
+            const mine = me.rango && me.rango.nombre === r.nombre;
+            const pct = A.n ? Math.round(r.count / A.n * 100) : 0;
+            return `<div class="flex items-center gap-2 text-xs">
+                <span class="flex-1 min-w-0 leading-tight ${mine ? 'text-violet-200 font-bold' : 'text-slate-400'}">${mine ? '▶ ' : ''}${pondEsc(r.nombre)}</span>
+                <div class="w-20 shrink-0 h-1.5 bg-slate-700 rounded-full overflow-hidden"><div class="h-full rounded-full ${mine ? 'bg-violet-400' : 'bg-slate-500'}" style="width:${pct}%"></div></div>
+                <span class="w-14 shrink-0 text-right text-slate-400">${r.count} (${pct}%)</span></div>`;
+        }).join('');
+
+        $('ended-content').innerHTML = `
+        <div class="space-y-5 w-full max-w-md mx-auto fade-in">
+            <div class="text-center space-y-1">
+                <div class="text-4xl">🧭</div>
+                <h2 class="text-2xl font-extrabold text-white">Tu autodiagnóstico</h2>
+                <p class="text-slate-400 text-sm">${pondEsc(sessionData.name || '')}</p>
+            </div>
+
+            ${pondRangoCard(me.rango) || `<div class="bg-amber-900/30 border border-amber-700/40 rounded-2xl p-4 text-center"><p class="text-sm text-amber-300">Tu puntaje (${me.total}) no coincide con ningún rango definido.</p></div>`}
+
+            ${A.rangos.length ? pondCard(pondTitle('Dónde te ubicas', `Tu puntaje: ${me.total} de ${A.maxTotal}`) + pondRangeScale(A, me.total)) : ''}
+
+            ${pondCard(pondTitle('Tu perfil de reacciones') + `
+                <p class="text-sm text-slate-200"><span class="font-extrabold text-emerald-300">${me.topCount} de tus ${me.answered}</span> respuestas fueron de mayor puntaje (${pondPtsLbl(A.topLvl)}).</p>
+                ${pondStackBar(pondLevelParts(A, me.levelCount))}
+                ${pondLevelLegend(A, me.levelCount)}`)}
+
+            ${me.fortalezas.length ? pondCard(pondTitle(`Tus fortalezas (${me.fortalezas.length})`, 'Situaciones en las que elegiste la reacción de mayor puntaje.') + `<ul>${fortHtml}</ul>`) : ''}
+
+            ${me.oportunidades.length ? pondCard(pondTitle(`Tus oportunidades (${me.oportunidades.length})`, 'Situaciones en las que tu reacción tuvo puntaje bajo, junto a la alternativa de mayor puntaje.') + opHtml)
+              : pondCard(pondTitle('Tus oportunidades') + '<p class="text-sm text-slate-300">No elegiste reacciones de puntaje bajo. Revisa las situaciones intermedias para seguir creciendo.</p>')}
+
+            ${A.n > 1 ? pondCard(pondTitle('Tú y el grupo', `${A.n} personas respondieron`) + `
+                <div class="space-y-1.5">${grupoRangos}</div>
+                ${grpPctTop !== null ? `<p class="text-xs text-slate-400">Respuestas de mayor puntaje: <span class="text-white font-semibold">tú ${myPctTop}%</span> · grupo ${grpPctTop}%</p>` : ''}`) : ''}
+
+            <div class="bg-emerald-950/40 border border-emerald-700/50 rounded-2xl p-5 space-y-2">
+                <p class="text-xs font-bold text-emerald-300 uppercase tracking-wider">Tu próximo paso</p>
+                <p class="text-sm text-slate-200">Elige <strong>una</strong> de tus oportunidades. Piensa en la última vez que viviste algo parecido y escribe qué harás distinto la próxima vez: una acción concreta y una fecha.</p>
+            </div>
+
+            <button onclick="printParticipantResult()" class="w-full py-3 bg-violet-700 hover:bg-violet-600 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
+                <i class="fa-solid fa-file-pdf"></i> Descargar mi resultado (PDF)
+            </button>
+            <button onclick="resetApp()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">Volver al inicio</button>
+        </div>`;
+    }
+
+    // ── PDF DEL PARTICIPANTE (tema claro) ───────────────────────────────────────
+    function pondPrintBody(sesNombre, participanteLabel, fecha) {
+        const A  = pondAnalytics();
+        const me = A.people.find(p => p.pid === participantId) || { total: 0, answered: 0, levelCount: {}, topCount: 0, fortalezas: [], oportunidades: [], rango: null };
+        const r  = me.rango;
+        const bar = (counts) => {
+            const tot = A.levels.reduce((s, l) => s + (counts[l] || 0), 0) || 1;
+            return `<div class="pbar">${A.levels.map(l => (counts[l] || 0) ? `<span style="width:${counts[l] / tot * 100}%;background:${pondLevelColor(l, A.topLvl).light}"></span>` : '').join('')}</div>
+                <div class="plegend">${A.levels.map(l => `<span><i style="background:${pondLevelColor(l, A.topLvl).light}"></i>${pondPtsLbl(l)}: ${counts[l] || 0}</span>`).join('')}</div>`;
+        };
+        const ops = me.oportunidades.map(it => `<tr><td>${it.idx + 1}. ${pondEsc(it.q.pregunta)}</td>
+            <td>${pondEsc(it.q['opcion' + it.key])} <b>(${it.pts})</b></td>
+            <td>${it.bestKey ? `${pondEsc(it.q['opcion' + it.bestKey])} <b>(${pondPts(it.q, it.bestKey)})</b>` : '—'}</td></tr>`).join('');
+        const forts = me.fortalezas.map(it => `<li>${pondEsc(it.q.pregunta)}</li>`).join('');
+        return `
+        <style>
+            .pbar { display:flex; height:12px; border-radius:6px; overflow:hidden; background:#e5e7eb; margin:8px 0 4px; }
+            .pbar span { display:block; height:100%; }
+            .plegend { display:flex; gap:14px; flex-wrap:wrap; font-size:11px; color:#4b5563; }
+            .plegend i { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:4px; vertical-align:middle; }
+            .ul-f { margin:6px 0; padding-left:18px; } .ul-f li { margin:3px 0; }
+            .next { background:#ecfdf5; border:1px solid #10b981; border-radius:10px; padding:12px 14px; margin-top:16px; }
+        </style>
+        <div class="header">
+            <div class="brand">IntelliPOS Quiz · Autodiagnóstico</div>
+            <div class="sesion-name">${pondEsc(sesNombre)}</div>
+            <div class="participante">${pondEsc(participanteLabel)}</div>
+        </div>
+        ${r ? `<div class="diag-box">
+            <div class="diag-label">Tu diagnóstico</div>
+            <div class="diag-nombre">${pondEsc(r.nombre)}</div>
+            ${r.diagnostico ? `<div class="diag-text">${pondEsc(r.diagnostico)}</div>` : ''}
+            ${r.tu_realidad ? `<div class="field-box" style="margin-top:12px"><div class="field-label">Tu realidad</div><div class="field-text">${pondEsc(r.tu_realidad)}</div></div>` : ''}
+            ${r.tu_reto ? `<div class="field-box"><div class="field-label">Tu reto</div><div class="field-text">${pondEsc(r.tu_reto)}</div></div>` : ''}
+            ${r.recuerda ? `<div class="field-box"><div class="field-label">Recuerda</div><div class="field-text">${pondEsc(r.recuerda)}</div></div>` : ''}
+        </div>` : ''}
+        <div class="stats-row">
+            <div class="stat-card"><div class="stat-val">${me.total} / ${A.maxTotal}</div><div class="stat-lbl">Tu puntaje</div></div>
+            <div class="stat-card"><div class="stat-val">${me.topCount} / ${me.answered}</div><div class="stat-lbl">Respuestas de mayor puntaje</div></div>
+        </div>
+        <div class="section-title">Tu perfil de reacciones</div>
+        ${bar(me.levelCount)}
+        ${forts ? `<div class="section-title">Tus fortalezas (${me.fortalezas.length})</div><ul class="ul-f">${forts}</ul>` : ''}
+        ${ops ? `<div class="section-title">Tus oportunidades (${me.oportunidades.length})</div>
+        <table><thead><tr><th style="width:36%">Situación</th><th>Tu reacción (pts)</th><th>Alternativa de mayor puntaje (pts)</th></tr></thead><tbody>${ops}</tbody></table>` : ''}
+        <div class="next"><b>Tu próximo paso:</b> elige una de tus oportunidades, piensa en la última vez que viviste algo parecido y escribe qué harás distinto la próxima vez, con una acción concreta y una fecha.</div>
+        <div class="footer"><span>IntelliPOS Quiz · ${pondEsc(sesNombre)}</span><span>${fecha}</span></div>
+        <button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>`;
+    }
+
+    // ── EXCEL DEL AUTODIAGNÓSTICO ──────────────────────────────────────────────
+    function downloadPondExcel() {
+        const A = pondAnalytics();
+        const sesName = sessionData.name || 'Autodiagnostico';
+        const fecha = new Date().toLocaleDateString('es-PE', { year: 'numeric', month: 'long', day: 'numeric' });
+        const wb = XLSX.utils.book_new();
+        const pct = v => v === null || v === undefined ? '—' : Math.round(v * 100) + '%';
+        const r1 = v => v === null || v === undefined ? '—' : Math.round(v * 10) / 10;
+
+        const res = [
+            ['REPORTE DEL AUTODIAGNÓSTICO'], [],
+            ['Cuestionario', sesName], ['Fecha de reporte', fecha],
+            ['Participantes con respuestas', A.n], ['Situaciones', A.pq.length], ['Puntaje máximo posible', A.maxTotal], [],
+            ['PUNTAJES DEL GRUPO'],
+            ['Promedio', r1(A.avgTotal)], ['Promedio (% del máximo)', A.avgTotal !== null && A.maxTotal ? pct(A.avgTotal / A.maxTotal) : '—'],
+            ['Mediana', r1(A.median)], ['Puntaje mínimo', A.minTotal ?? '—'], ['Puntaje máximo obtenido', A.maxTotalObt ?? '—'], [],
+            ['PERFIL DEL GRUPO (DIAGNÓSTICO)'], ['Diagnóstico', 'Rango de puntaje', 'Personas', '%'],
+            ...A.rangoDist.map(r => [r.nombre, `${r.min} – ${r.max}`, r.count, A.n ? pct(r.count / A.n) : '—']), [],
+            ['REACCIONES DEL GRUPO (todas las respuestas)'], ['Puntaje de la reacción', 'Respuestas', '%'],
+            ...A.levels.map(l => [`${pondPtsLbl(l)}`, A.levelTotals[l] || 0, A.totalResponses ? pct((A.levelTotals[l] || 0) / A.totalResponses) : '—']),
+            ['Total', A.totalResponses, '100%'],
+        ];
+        const ws1 = XLSX.utils.aoa_to_sheet(res); ws1['!cols'] = [{ wch: 42 }, { wch: 20 }, { wch: 12 }, { wch: 10 }];
+        XLSX.utils.book_append_sheet(wb, ws1, 'Resumen');
+
+        const sitH = ['N°', 'Situación', 'Respuestas', 'Promedio', 'Máx', '% del máximo', 'Reacción más elegida', '% que la eligió', 'Pts de esa reacción', 'Reacción de mayor puntaje', '% que la eligió', '% reacciones de puntaje bajo', 'Grupo dividido', ...POND_KEYS.map(k => `Opción ${k} (personas)`)];
+        const sitR = A.ordenadas.map(s => [
+            s.idx + 1, s.q.pregunta, s.nAns, r1(s.avg), s.max, pct(s.avgPct),
+            s.modalKey ? `${s.modalKey}: ${s.q['opcion' + s.modalKey]}` : '—', pct(s.modalShare), s.modalKey ? pondPts(s.q, s.modalKey) : '—',
+            s.bestKey ? `${s.bestKey}: ${s.q['opcion' + s.bestKey]}` : '—', pct(s.pctTop), pct(s.pctLow), s.dividida ? 'Sí' : 'No',
+            ...POND_KEYS.map(k => s.counts[k] ?? '—'),
+        ]);
+        const ws2 = XLSX.utils.aoa_to_sheet([['Situaciones ordenadas de menor a mayor puntaje promedio del grupo'], [], sitH, ...sitR]);
+        ws2['!cols'] = [{ wch: 5 }, { wch: 55 }, { wch: 11 }, { wch: 9 }, { wch: 6 }, { wch: 12 }, { wch: 55 }, { wch: 14 }, { wch: 10 }, { wch: 55 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }];
+        XLSX.utils.book_append_sheet(wb, ws2, 'Mapa de situaciones');
+
+        const peopleSorted = [...A.people].sort((a, b) => a.nick.localeCompare(b.nick, 'es'));
+        const pH = ['Participante', 'Diagnóstico', 'Puntaje', `% del máximo (${A.maxTotal})`, 'Respondidas', ...A.levels.map(l => `Reacciones de ${pondPtsLbl(l)}`), 'Oportunidades (situaciones)'];
+        const pR = peopleSorted.map(p => [
+            p.nick, p.answered ? (p.rango ? p.rango.nombre : 'Sin rango') : 'Sin respuestas', p.answered ? p.total : '—',
+            p.answered && A.maxTotal ? pct(p.total / A.maxTotal) : '—', p.answered,
+            ...A.levels.map(l => p.levelCount[l] || 0), p.oportunidades.map(o => o.idx + 1).join(', '),
+        ]);
+        const ws3 = XLSX.utils.aoa_to_sheet([pH, ...pR]);
+        ws3['!cols'] = [{ wch: 28 }, { wch: 40 }, { wch: 9 }, { wch: 14 }, { wch: 11 }, ...A.levels.map(() => ({ wch: 14 })), { wch: 30 }];
+        XLSX.utils.book_append_sheet(wb, ws3, 'Participantes');
+
+        const pv = sessionData.participantVotes || {};
+        const mH = ['Participante', ...A.pq.map(({ idx }) => `S${idx + 1}`), 'Total'];
+        const mR = peopleSorted.map(p => [p.nick, ...A.pq.map(({ q, idx }) => {
+            const k = (pv[p.pid] || {})[String(idx)]; return k && q['opcion' + k] ? `${k} (${pondPts(q, k)})` : '—';
+        }), p.answered ? p.total : '—']);
+        const ws4 = XLSX.utils.aoa_to_sheet([['Opción elegida por cada participante y sus puntos. S = situación.'], [], mH, ...mR]);
+        ws4['!cols'] = [{ wch: 28 }, ...A.pq.map(() => ({ wch: 7 })), { wch: 7 }];
+        XLSX.utils.book_append_sheet(wb, ws4, 'Matriz de respuestas');
+
+        const fileName = `Autodiagnostico_${sesName.replace(/[^\wáéíóúñÁÉÍÓÚÑ-]+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+    }
+
+    // ── BOLETA (enlace personal): usa los datos guardados en session_results ────
+    function pondBoletaHtml(respuestas, puntajeTotal, rango) {
+        const items = respuestas.map((r, i) => ({ ...r, n: i + 1 })).filter(r => r.tipo === 'ponderada');
+        const maxTotal = items.reduce((s, r) => s + (r.puntaje_maximo || 0), 0);
+        const answered = items.filter(r => r.respuesta_dada);
+        const top  = answered.filter(r => r.puntaje_obtenido >= r.puntaje_maximo);
+        const low  = answered.filter(r => r.puntaje_obtenido < r.puntaje_maximo / 2);
+        const levelCount = {}; answered.forEach(r => levelCount[r.puntaje_obtenido] = (levelCount[r.puntaje_obtenido] || 0) + 1);
+        const levels = Object.keys(levelCount).map(Number).sort((a, b) => b - a);
+        const maxLvl = Math.max(0, ...items.map(r => r.puntaje_maximo || 0));
+        const parts = levels.map(l => ({ label: pondPtsLbl(l), value: levelCount[l], color: pondLevelColor(l, maxLvl).bar }));
+        const conTexto = answered.some(r => r.pregunta);
+        const opHtml = low.map(r => `<div class="p-3 rounded-xl bg-slate-900/60 border border-slate-700/60 space-y-1">
+            <p class="text-xs font-semibold text-slate-200">${r.n}. ${pondEsc(r.pregunta || 'Situación ' + r.n)}</p>
+            <p class="text-xs ${pondLevelColor(r.puntaje_obtenido, r.puntaje_maximo).text}"><span class="text-slate-500">Tu reacción:</span> ${pondEsc(r.respuesta_texto || r.respuesta_dada)} (${pondPtsLbl(r.puntaje_obtenido)})</p>
+            ${r.alternativa_texto ? `<p class="text-xs text-emerald-300"><span class="text-slate-500">Alternativa de mayor puntaje:</span> «${pondEsc(r.alternativa_texto)}» (${r.puntaje_maximo} pts)</p>` : ''}
+        </div>`).join('');
+        return {
+            resultado: `${pondRangoCard(rango)}
+                ${pondCard(pondTitle('Tu perfil de reacciones', `Puntaje: ${puntajeTotal ?? '—'} de ${maxTotal}`) + `
+                    <p class="text-sm text-slate-200"><span class="font-extrabold text-emerald-300">${top.length} de tus ${answered.length}</span> respuestas fueron de mayor puntaje.</p>
+                    ${pondStackBar(parts)}
+                    <div class="flex flex-wrap gap-x-4 text-xs mt-1">${levels.map(l => `<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm inline-block" style="background:${pondLevelColor(l, maxLvl).bar}"></span><span class="text-slate-300">${pondPtsLbl(l)}</span><span class="text-slate-500">${levelCount[l]}</span></span>`).join('')}</div>`)}`,
+            revision: low.length
+                ? pondCard(pondTitle(`Tus oportunidades (${low.length})`, conTexto ? 'Situaciones en las que tu reacción tuvo puntaje bajo, junto a la alternativa de mayor puntaje.' : 'Situaciones en las que tu reacción tuvo puntaje bajo.') + opHtml)
+                : pondCard(pondTitle('Tus oportunidades') + '<p class="text-sm text-slate-300">No elegiste reacciones de puntaje bajo.</p>'),
+        };
+    }
+
     function renderEndPresenter() {
         showView('view-ended');
         const { scores, avg, hasPonderada } = calculateScores();
@@ -2377,133 +2861,8 @@
         const bestScore   = scores.find(s => s.nota !== null);
         const bestNota    = bestScore ? bestScore.nota : null;
 
-        // ── Sesión PONDERADA: distribución por rango ──────────────────────────
-        if (hasPonderada) {
-            const rangos = sessionData.rangos || [];
-            // Contar participantes en cada rango
-            const rangoDist = rangos.map(r => ({
-                ...r,
-                count: scores.filter(s => s.puntaje_total >= r.min && s.puntaje_total <= r.max).length
-            }));
-            const totalPart = scores.length;
-            const maxPt     = scores.length > 0 ? Math.max(...scores.map(s => s.puntaje_total || 0)) : 0;
-            const avgPt     = scores.length > 0 ? Math.round(scores.reduce((s, x) => s + (x.puntaje_total || 0), 0) / scores.length * 10) / 10 : 0;
-
-            const rangoDistHtml = rangoDist.map(r => {
-                const pct = totalPart > 0 ? Math.round(r.count / totalPart * 100) : 0;
-                return `<div class="space-y-1">
-                    <div class="flex items-center justify-between text-xs">
-                        <span class="font-semibold text-violet-300">${r.nombre} <span class="font-normal text-slate-500">(${r.min}–${r.max} pts)</span></span>
-                        <span class="text-white font-bold">${r.count} <span class="text-slate-400 font-normal">(${pct}%)</span></span>
-                    </div>
-                    <div class="h-2 bg-slate-700 rounded-full overflow-hidden">
-                        <div class="h-full rounded-full bg-violet-500 transition-all duration-500" style="width:${pct}%"></div>
-                    </div>
-                    ${r.diagnostico ? `<p class="text-xs text-slate-500 italic">${r.diagnostico}</p>` : ''}
-                </div>`;
-            }).join('');
-
-            const scoreRows = scores.map((s, i) => {
-                const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
-                const ptMax  = rangos.length > 0 ? Math.max(...rangos.map(r => r.max)) : '?';
-                const barW   = ptMax > 0 ? Math.round((s.puntaje_total || 0) / ptMax * 100) : 0;
-                const rangoNombre = s.rango ? s.rango.nombre : '—';
-                return `<tr class="border-b border-slate-700/50">
-                    <td class="py-2 pr-3 text-slate-400 w-8 text-center text-sm">${medal}</td>
-                    <td class="py-2 pr-2 text-sm font-medium text-white">${s.nick}</td>
-                    <td class="py-2 pr-2 text-xs text-violet-300 hidden sm:table-cell">${rangoNombre}</td>
-                    <td class="py-2 w-28">
-                        <div class="flex items-center space-x-2">
-                            <div class="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                                <div class="h-full rounded-full bg-violet-500" style="width:${barW}%"></div>
-                            </div>
-                            <span class="text-sm font-bold text-white w-8 text-right">${s.puntaje_total ?? '—'}</span>
-                        </div>
-                    </td>
-                </tr>`;
-            }).join('');
-
-            // Preguntas: distribución de opciones elegidas
-            const qRows = sessionData.questions.filter(q => q.tipo === 'ponderada').map((q, qi) => {
-                const origIdx = sessionData.questions.indexOf(q);
-                const total   = ['A','B','C','D'].reduce((s,k) => s + (sessionData.votes[origIdx+'_'+k] || 0), 0);
-                const opts    = ['A','B','C','D'].map(k => {
-                    const c   = sessionData.votes[origIdx+'_'+k] || 0;
-                    const pts = q['puntaje'+k] !== undefined ? q['puntaje'+k] : 0;
-                    return `<span class="text-slate-400">${k}:${c}(${pts}pts)</span>`;
-                }).join(' ');
-                return `<tr class="border-b border-slate-700/30 text-xs">
-                    <td class="py-1.5 pr-2 text-slate-300">${origIdx+1}. ${q.pregunta.length > 50 ? q.pregunta.substring(0,50)+'…' : q.pregunta}</td>
-                    <td class="py-1.5 text-right">${opts}</td>
-                </tr>`;
-            }).join('');
-
-            $('ended-content').innerHTML = `
-                <div class="space-y-6 w-full fade-in">
-                    <div class="text-center space-y-1">
-                        <div class="text-4xl">📊</div>
-                        <h2 class="text-2xl font-extrabold text-white">Resultados — Prueba Ponderada</h2>
-                        <p class="text-slate-400 text-sm">${sessionData.name}</p>
-                    </div>
-
-                    <!-- Stats -->
-                    <div class="grid grid-cols-3 gap-3">
-                        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 text-center">
-                            <p class="text-3xl font-extrabold text-indigo-400">${totalPart}</p>
-                            <p class="text-xs text-slate-400 mt-1">Participantes</p>
-                        </div>
-                        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 text-center">
-                            <p class="text-3xl font-extrabold text-violet-400">${avgPt}</p>
-                            <p class="text-xs text-slate-400 mt-1">Puntaje promedio</p>
-                        </div>
-                        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 text-center">
-                            <p class="text-3xl font-extrabold text-amber-400">${maxPt}</p>
-                            <p class="text-xs text-slate-400 mt-1">Puntaje más alto</p>
-                        </div>
-                    </div>
-
-                    <!-- Distribución por rango -->
-                    ${rangoDist.length > 0 ? `
-                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl space-y-4">
-                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Distribución por rango</p>
-                        ${rangoDistHtml}
-                    </div>` : ''}
-
-                    <!-- Ranking -->
-                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl">
-                        <div class="flex items-center justify-between mb-3">
-                            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Ranking de participantes</p>
-                            <label class="flex items-center space-x-2 cursor-pointer text-xs text-slate-400">
-                                <input type="checkbox" checked
-                                    onchange="document.getElementById('public-scores-table').classList.toggle('hidden', !this.checked)"
-                                    class="accent-violet-500 w-3.5 h-3.5">
-                                <span>Mostrar ranking</span>
-                            </label>
-                        </div>
-                        <div id="public-scores-table">
-                            ${scores.length === 0
-                                ? '<p class="text-slate-500 italic text-sm">No hubo participantes.</p>'
-                                : `<table class="w-full"><tbody>${scoreRows}</tbody></table>`}
-                        </div>
-                    </div>
-
-                    <!-- Preguntas -->
-                    ${qRows ? `
-                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl">
-                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Distribución por pregunta</p>
-                        <table class="w-full"><tbody>${qRows}</tbody></table>
-                    </div>` : ''}
-
-                    <button onclick="downloadReportExcel()"
-                        class="w-full py-3 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg transition text-sm">
-                        <i class="fa-solid fa-file-excel mr-2"></i>Descargar Reporte Excel
-                    </button>
-                    <button onclick="resetApp()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">
-                        Volver al inicio
-                    </button>
-                </div>`;
-            return;
-        }
+        // ── Sesión PONDERADA (autodiagnóstico): estadísticas propias ─────────
+        if (hasPonderada) { renderPondPresenter(); return; }
 
         const rows = scores.map((s, i) => {
             const medal    = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
@@ -2634,114 +2993,8 @@
         const bestScore = scores.find(s => s.nota !== null);
         const bestNota  = bestScore ? bestScore.nota : null;
 
-        // ── Sesión PONDERADA: mostrar puntaje + rango ─────────────────────────
-        if (hasPonderada) {
-            const pt    = myScore ? myScore.puntaje_total : null;
-            const rango = myScore ? myScore.rango : null;
-            const rangos = sessionData.rangos || [];
-            const ptMax  = rangos.length > 0 ? Math.max(...rangos.map(r => r.max)) : '?';
-
-            const rangosHtml = rangos.map(r => {
-                const esElMio = rango && rango.nombre === r.nombre;
-                return `<div class="p-3 rounded-xl border ${esElMio
-                    ? 'bg-violet-900/50 border-violet-500 ring-2 ring-violet-500/50'
-                    : 'bg-slate-800/50 border-slate-700/40'}">
-                    <p class="text-sm font-bold ${esElMio ? 'text-violet-200' : 'text-slate-300'}">${esElMio ? '▶ ' : ''}${r.nombre} <span class="font-normal text-xs text-slate-500">(${r.min}–${r.max} pts)</span></p>
-                    ${r.diagnostico ? `<p class="text-xs text-slate-400 mt-0.5">${r.diagnostico}</p>` : ''}
-                </div>`;
-            }).join('');
-
-            $('ended-content').innerHTML = `
-                <div class="space-y-5 w-full max-w-sm mx-auto fade-in">
-                    <div class="text-center space-y-1">
-                        <div class="text-4xl">📊</div>
-                        <h2 class="text-2xl font-extrabold text-white">¡Sesión finalizada!</h2>
-                        <p class="text-slate-400 text-sm">${sessionData.name}</p>
-                    </div>
-
-                    <!-- Puntaje personal -->
-                    <div class="bg-slate-800 border border-violet-700/50 rounded-2xl p-6 text-center shadow-xl space-y-2">
-                        <p class="text-xs text-violet-300 uppercase tracking-wider font-semibold">Tu puntaje total</p>
-                        <p class="text-7xl font-extrabold text-violet-300">${pt !== null ? pt : '—'}</p>
-                        <p class="text-xs text-slate-400">de ${ptMax} puntos máximos</p>
-                    </div>
-
-                    <!-- Estadísticas del grupo -->
-                    ${(() => {
-                        const validSc = scores.filter(s => s.puntaje_total !== null && s.puntaje_total !== undefined);
-                        const ptBest  = validSc.length > 0 ? Math.max(...validSc.map(s => s.puntaje_total || 0)) : null;
-                        const ptAvg   = validSc.length > 0 ? Math.round(validSc.reduce((a,s) => a+(s.puntaje_total||0),0)/validSc.length*10)/10 : null;
-                        let grpMsg = '', grpColor = 'text-slate-300';
-                        if (pt !== null && ptBest !== null && pt === ptBest && validSc.filter(s=>(s.puntaje_total||0)===ptBest).length===1) { grpMsg='🏆 ¡Obtuviste el puntaje más alto del grupo!'; grpColor='text-amber-400'; }
-                        else if (ptAvg !== null && pt !== null && pt > ptAvg) { grpMsg='🌟 Tu puntaje está por encima del promedio.'; grpColor='text-emerald-400'; }
-                        else if (ptAvg !== null && pt !== null && Math.abs(pt-ptAvg)<0.5) { grpMsg='👍 Obtuviste el puntaje promedio del grupo.'; grpColor='text-indigo-300'; }
-                        else if (pt !== null) { grpMsg='📚 Tu puntaje está por debajo del promedio.'; grpColor='text-amber-300'; }
-                        return `<div class="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4 space-y-2">
-                            <div class="flex justify-between">
-                                <div class="text-center flex-1">
-                                    <p class="text-xs text-slate-500 uppercase tracking-wider">Más alto</p>
-                                    <p class="text-xl font-extrabold text-amber-400">${ptBest !== null ? ptBest : '—'}</p>
-                                </div>
-                                <div class="text-center flex-1">
-                                    <p class="text-xs text-slate-500 uppercase tracking-wider">Promedio</p>
-                                    <p class="text-xl font-extrabold text-indigo-300">${ptAvg !== null ? ptAvg : '—'}</p>
-                                </div>
-                                <div class="text-center flex-1">
-                                    <p class="text-xs text-slate-500 uppercase tracking-wider">Participantes</p>
-                                    <p class="text-xl font-extrabold text-slate-300">${validSc.length}</p>
-                                </div>
-                            </div>
-                            ${grpMsg ? `<p class="text-xs text-center font-semibold ${grpColor}">${grpMsg}</p>` : ''}
-                        </div>`;
-                    })()}
-
-                    <!-- Rango obtenido -->
-                    ${rango ? `
-                    <div class="bg-violet-950/60 border border-violet-600/50 rounded-2xl p-5 text-center shadow-xl space-y-1">
-                        <p class="text-xs text-violet-300 uppercase tracking-wider font-semibold">Tu diagnóstico</p>
-                        <p class="text-2xl font-extrabold text-violet-200">${rango.nombre}</p>
-                        ${rango.diagnostico ? `<p class="text-sm text-slate-300 mt-2">${rango.diagnostico}</p>` : ''}
-                        ${rango.tu_realidad ? `<div class="text-left mt-3 p-3 bg-slate-800/60 rounded-xl border-l-4 border-violet-500"><p class="text-xs font-bold text-violet-400 uppercase mb-1">Tu realidad</p><p class="text-xs text-slate-300">${rango.tu_realidad}</p></div>` : ''}
-                        ${rango.tu_reto ? `<div class="text-left mt-2 p-3 bg-slate-800/60 rounded-xl border-l-4 border-amber-500"><p class="text-xs font-bold text-amber-400 uppercase mb-1">Tu reto</p><p class="text-xs text-slate-300">${rango.tu_reto}</p></div>` : ''}
-                        ${rango.recuerda ? `<div class="text-left mt-2 p-3 bg-slate-800/60 rounded-xl border-l-4 border-emerald-500"><p class="text-xs font-bold text-emerald-400 uppercase mb-1">Recuerda</p><p class="text-xs text-slate-300">${rango.recuerda}</p></div>` : ''}
-                    </div>` : (pt !== null ? `
-                    <div class="bg-amber-900/30 border border-amber-700/40 rounded-2xl p-4 text-center">
-                        <p class="text-sm text-amber-300">Tu puntaje (${pt}) no coincide con ningún rango definido.</p>
-                    </div>` : '')}
-
-                    <!-- Todos los rangos -->
-                    ${rangos.length > 0 ? `
-                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl space-y-2">
-                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Rangos diagnósticos</p>
-                        ${rangosHtml}
-                    </div>` : ''}
-
-                    <!-- Revisión por pregunta -->
-                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl space-y-3">
-                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Revisión de respuestas</p>
-                        ${sessionData.questions.map((q, idx) => {
-                            if (q.tipo !== 'ponderada') return '';
-                            const myVote = myScore ? (sessionData.participantVotes?.[participantId]?.[String(idx)] || null) : null;
-                            const pts    = myVote ? (q['puntaje' + myVote] || 0) : 0;
-                            return `<div class="border-b border-slate-700/40 pb-2">
-                                <p class="text-xs font-semibold text-slate-300 mb-1">${idx+1}. ${q.pregunta}</p>
-                                ${myVote
-                                    ? `<p class="text-xs text-slate-400">Tu respuesta: <strong class="text-white">${myVote}</strong> — ${q['opcion'+myVote] || ''} <span class="text-violet-300 font-semibold">(${pts} pts)</span></p>`
-                                    : '<p class="text-xs text-slate-500 italic">Sin respuesta</p>'}
-                            </div>`;
-                        }).join('')}
-                    </div>
-
-                    <button onclick="printParticipantResult()"
-                        class="w-full py-3 bg-violet-700 hover:bg-violet-600 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
-                        <i class="fa-solid fa-file-pdf"></i> Descargar mi resultado (PDF)
-                    </button>
-                    <button onclick="resetApp()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">
-                        Volver al inicio
-                    </button>
-                </div>`;
-            return; // no ejecutar el flujo MC
-        }
+        // ── Sesión PONDERADA (autodiagnóstico) ────────────────────────────────
+        if (hasPonderada) { renderPondParticipant(); return; }
 
         let msg = '', msgColor = '';
         if (!myScore) {
@@ -2995,96 +3248,7 @@
         let bodyHTML = '';
 
         if (hasPonderada) {
-            const pt    = myScore?.puntaje_total ?? 0;
-            const rango = myScore?.rango || null;
-            const ptMax = rangos.length > 0 ? Math.max(...rangos.map(r => r.max)) : '?';
-            const validScores = scores.filter(s => s.puntaje_total !== null && s.puntaje_total !== undefined);
-            const ptBest = validScores.length > 0 ? Math.max(...validScores.map(s => s.puntaje_total || 0)) : null;
-            const ptAvg  = validScores.length > 0
-                ? Math.round(validScores.reduce((a, s) => a + (s.puntaje_total || 0), 0) / validScores.length * 10) / 10 : null;
-
-            let msg = '';
-            if (ptBest !== null && pt === ptBest && validScores.filter(s => (s.puntaje_total||0) === ptBest).length === 1) {
-                msg = '🏆 ¡Obtuviste el puntaje más alto del grupo!';
-            } else if (ptAvg !== null && pt > ptAvg) {
-                msg = '🌟 Tu puntaje está por encima del promedio del grupo.';
-            } else if (ptAvg !== null && Math.abs(pt - ptAvg) < 0.5) {
-                msg = '👍 Obtuviste el puntaje promedio del grupo.';
-            } else if (ptBest !== null && pt === ptBest && validScores.filter(s => (s.puntaje_total||0) === ptBest).length > 1) {
-                msg = '🏆 ¡Estás entre los que obtuvieron el puntaje más alto!';
-            } else {
-                msg = '📚 Tu puntaje está por debajo del promedio del grupo.';
-            }
-
-            // Revisión de respuestas PONDERADA
-            const qRows = questions.map((q, idx) => {
-                if ((q.tipo || '') !== 'ponderada') return '';
-                const myVote = myVotes[String(idx)] || null;
-                const pts    = myVote ? (q['puntaje' + myVote] || 0) : 0;
-                const optTxt = myVote ? `${myVote}: ${q['opcion' + myVote] || ''}` : '—';
-                return `<tr>
-                    <td>${idx+1}. ${q.pregunta}</td>
-                    <td>${optTxt}</td>
-                    <td class="pts-cell">${myVote ? pts : '—'}</td>
-                </tr>`;
-            }).join('');
-
-            bodyHTML = `
-            <div class="header">
-                <div class="brand">IntelliPOS Quiz</div>
-                <div class="sesion-name">${sesNombre}</div>
-                <div class="participante">${participanteLabel}</div>
-            </div>
-
-            <div class="score-box">
-                <div class="diag-label">Tu puntaje total</div>
-                <div class="score-num">${pt}</div>
-                <div class="score-sub">de ${ptMax} puntos máximos</div>
-            </div>
-
-            <div class="stats-row">
-                <div class="stat-card">
-                    <div class="stat-val">${ptBest !== null ? ptBest : '—'}</div>
-                    <div class="stat-lbl">Puntaje más alto</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-val">${ptAvg !== null ? ptAvg : '—'}</div>
-                    <div class="stat-lbl">Promedio del grupo</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-val">${validScores.length}</div>
-                    <div class="stat-lbl">Participantes</div>
-                </div>
-            </div>
-
-            <div class="msg-box">${msg}</div>
-
-            ${rango ? `
-            <div class="diag-box">
-                <div class="diag-label">Tu diagnóstico</div>
-                <div class="diag-nombre">${rango.nombre}</div>
-                ${rango.diagnostico ? `<div class="diag-text">${rango.diagnostico}</div>` : ''}
-                ${rango.tu_realidad ? `<div class="field-box" style="margin-top:12px"><div class="field-label">Tu realidad</div><div class="field-text">${rango.tu_realidad}</div></div>` : ''}
-                ${rango.tu_reto ? `<div class="field-box"><div class="field-label">Tu reto</div><div class="field-text">${rango.tu_reto}</div></div>` : ''}
-                ${rango.recuerda ? `<div class="field-box"><div class="field-label">Recuerda</div><div class="field-text">${rango.recuerda}</div></div>` : ''}
-            </div>` : ''}
-
-            <div class="section-title">Detalle de respuestas</div>
-            <table>
-                <thead><tr>
-                    <th style="width:60%">Pregunta</th>
-                    <th>Tu respuesta</th>
-                    <th style="width:70px;text-align:center">Pts</th>
-                </tr></thead>
-                <tbody>${qRows}</tbody>
-            </table>
-
-            <div class="footer">
-                <span>IntelliPOS Quiz · ${sesNombre}</span>
-                <span>${fecha}</span>
-            </div>
-            <button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>`;
-
+            bodyHTML = pondPrintBody(sesNombre, participanteLabel, fecha);
         } else {
             // ── MC ──────────────────────────────────────────────────────────
             const nota     = myScore?.nota ?? null;
@@ -4503,6 +4667,7 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
 
         // ── Bloque de resultado principal (varía según tipo) ──────────────────
         let resultadoHtml = '';
+        let pondBoleta = null;
         if (esNivelRango && rangosDimObtenidos) {
             // ── NIVEL-RANGO: un diagnóstico por dimensión ──────────────────────
             const dimsHtml = Object.entries(rangosDimObtenidos).map(([d, info]) => {
@@ -4531,19 +4696,8 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
                 ${dimsHtml}
             </div>`;
         } else if (esPonderada) {
-            const ptMax = rangoObtenido ? rangoObtenido.max : '?';
-            resultadoHtml = `
-            <div class="bg-slate-800 border border-violet-700/50 rounded-2xl p-6 text-center shadow-xl space-y-1">
-                <p class="text-xs text-violet-300 uppercase tracking-wider font-semibold">Puntaje total</p>
-                <p class="text-7xl font-extrabold text-violet-300">${puntajeTotal !== null ? puntajeTotal : '—'}</p>
-                <p class="text-xs text-slate-500">puntos</p>
-            </div>
-            ${rangoObtenido ? `
-            <div class="bg-violet-950/60 border border-violet-600/50 rounded-2xl p-5 text-center shadow-xl space-y-1">
-                <p class="text-xs text-violet-300 uppercase tracking-wider font-semibold">Diagnóstico</p>
-                <p class="text-2xl font-extrabold text-violet-200">${rangoObtenido.nombre}</p>
-                ${rangoObtenido.diagnostico ? `<p class="text-sm text-slate-300 mt-1">${rangoObtenido.diagnostico}</p>` : ''}
-            </div>` : ''}`;
+            pondBoleta = pondBoletaHtml(respuestas, puntajeTotal, rangoObtenido);
+            resultadoHtml = pondBoleta.resultado;
         } else {
             const notaDisp  = nota !== null && nota !== undefined ? nota.toFixed(1) : '—';
             const notaColor = nota === null || nota === undefined ? 'text-slate-400'
@@ -4571,10 +4725,11 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
 
             ${resultadoHtml}
 
+            ${pondBoleta ? pondBoleta.revision : `
             <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl space-y-3">
                 <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Revisión de respuestas</p>
                 ${respHtml}
-            </div>
+            </div>`}
 
             <p class="text-center text-xs text-slate-600">Sesión: ${sessionId}</p>`;
     }
@@ -4588,6 +4743,8 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
             alert('La librería Excel aún no cargó. Espera un momento e intenta de nuevo.');
             return;
         }
+        // v3.0: el autodiagnóstico ponderado tiene su propio reporte (sin notas ni aprobados)
+        if ((sessionData.questions || []).some(q => q.tipo === 'ponderada')) { downloadPondExcel(); return; }
 
         // Cargar resultados desde Supabase (usa gradingResults si ya están, si no los carga)
         let results = gradingResults && gradingResults.length > 0 ? gradingResults : null;
