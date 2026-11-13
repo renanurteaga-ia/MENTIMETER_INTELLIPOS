@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IntelliPOS — Cursos y dictados</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/cursos-common.js"></script>
+<style>
+  body { background: #0f172a; font-family: system-ui, sans-serif; }
+  .glass { background: rgba(30,41,59,0.85); backdrop-filter: blur(12px); }
+  .fade-in { animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .inp { width:100%; background:#0f172a; border:1px solid #475569; border-radius:0.75rem; padding:0.65rem 0.9rem; color:#fff; font-size:0.875rem; }
+  .inp:focus { outline:none; border-color:#0ea5e9; }
+</style>
+</head>
+<body class="min-h-screen text-slate-100">
+
+<header class="glass border-b border-slate-700/60 px-6 py-4 flex flex-wrap items-center gap-4 sticky top-0 z-30">
+  <div class="flex items-center gap-3">
+    <div class="w-9 h-9 rounded-xl bg-sky-600 flex items-center justify-center text-lg font-bold">I</div>
+    <div>
+      <div class="font-bold text-white leading-tight">IntelliPOS</div>
+      <div class="text-xs text-sky-400">Cursos y dictados</div>
+    </div>
+  </div>
+  <nav class="ml-auto flex flex-wrap items-center gap-4">
+    <a href="/" class="text-slate-400 hover:text-white text-sm flex items-center gap-1"><i class="fa-solid fa-house"></i> Inicio</a>
+    <a href="/quiz-prep.html" class="text-slate-400 hover:text-white text-sm flex items-center gap-1"><i class="fa-solid fa-book"></i> Cuestionarios</a>
+    <a href="/student-list-prep.html" class="text-slate-400 hover:text-white text-sm flex items-center gap-1"><i class="fa-solid fa-users"></i> Participantes</a>
+    <button onclick="openCursoModal()" class="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-xl text-sm font-semibold">
+      <i class="fa-solid fa-plus"></i> Nuevo curso
+    </button>
+  </nav>
+</header>
+
+<main class="max-w-4xl mx-auto px-4 py-8 space-y-4">
+  <div class="flex items-center justify-between">
+    <h1 class="text-lg font-bold text-white">🎓 Mis cursos</h1>
+    <button onclick="load()" class="text-slate-400 hover:text-white text-sm flex items-center gap-1"><i class="fa-solid fa-rotate-right"></i> Actualizar</button>
+  </div>
+  <p class="text-sm text-slate-400">Cada curso puede dictarse varias veces. Cada <strong class="text-slate-200">dictado</strong> tiene sus propios cuestionarios y listas de participantes. Un cuestionario asignado al curso sin dictado se puede reutilizar en todos sus dictados.</p>
+
+  <div id="msg-setup" class="hidden glass rounded-2xl border border-amber-700/60 p-5 text-sm text-amber-200 space-y-2">
+    <p class="font-semibold"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Falta preparar la base de datos</p>
+    <p>Ejecuta una vez el archivo <span class="font-mono">supabase_cursos.sql</span> en Supabase → SQL Editor → New query → Run, y vuelve a cargar esta página.</p>
+  </div>
+
+  <div id="loading" class="text-center py-16 text-slate-500"><i class="fa-solid fa-spinner fa-spin text-2xl"></i></div>
+  <div id="empty" class="hidden text-center py-16 text-slate-500 glass rounded-2xl border border-slate-700/50">
+    <i class="fa-solid fa-graduation-cap text-4xl mb-4 text-slate-600"></i>
+    <p class="font-semibold text-slate-400">Aún no tienes cursos</p>
+    <p class="text-sm mt-1">Crea el primero con «Nuevo curso».</p>
+  </div>
+  <div id="list" class="space-y-4"></div>
+</main>
+
+<!-- Modal curso -->
+<div id="modal-curso" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+  <form onsubmit="saveCurso(event)" class="glass rounded-2xl border border-slate-600 p-6 max-w-md w-full space-y-4 fade-in">
+    <h2 id="curso-title" class="text-lg font-bold text-white">Nuevo curso</h2>
+    <label class="block text-sm font-semibold text-slate-300 space-y-1">Nombre del curso
+      <input id="c-nombre" class="inp" required placeholder="Ej: Accountability">
+    </label>
+    <label class="block text-sm font-semibold text-slate-300 space-y-1">Descripción <span class="font-normal text-slate-500">(opcional)</span>
+      <input id="c-desc" class="inp" placeholder="Ej: Taller de responsabilidad personal">
+    </label>
+    <label class="block text-sm font-semibold text-slate-300 space-y-1">Carpeta en Drive <span class="font-normal text-slate-500">(opcional)</span>
+      <input id="c-drive" class="inp" type="url" placeholder="https://drive.google.com/drive/folders/…">
+      <span class="block text-xs font-normal text-slate-500">Pega el enlace de la carpeta del curso dentro de MENTIMETER1.</span>
+    </label>
+    <div class="flex gap-3 pt-1">
+      <button type="button" onclick="closeModals()" class="flex-1 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold">Cancelar</button>
+      <button type="submit" class="flex-1 py-2.5 bg-sky-600 hover:bg-sky-500 rounded-xl text-sm font-bold">Guardar</button>
+    </div>
+  </form>
+</div>
+
+<!-- Modal dictado -->
+<div id="modal-dictado" class="hidden fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+  <form onsubmit="saveDictado(event)" class="glass rounded-2xl border border-slate-600 p-6 max-w-md w-full space-y-4 fade-in">
+    <h2 id="dictado-title" class="text-lg font-bold text-white">Nuevo dictado</h2>
+    <p id="dictado-curso" class="text-sm text-sky-300"></p>
+    <label class="block text-sm font-semibold text-slate-300 space-y-1">Nombre del dictado
+      <input id="d-nombre" class="inp" required placeholder="Ej: 2026-II · Sección A">
+    </label>
+    <div class="grid grid-cols-2 gap-3">
+      <label class="block text-sm font-semibold text-slate-300 space-y-1">Inicio <span class="font-normal text-slate-500">(opc.)</span>
+        <input id="d-ini" class="inp" type="date">
+      </label>
+      <label class="block text-sm font-semibold text-slate-300 space-y-1">Fin <span class="font-normal text-slate-500">(opc.)</span>
+        <input id="d-fin" class="inp" type="date">
+      </label>
+    </div>
+    <div class="flex gap-3 pt-1">
+      <button type="button" onclick="closeModals()" class="flex-1 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold">Cancelar</button>
+      <button type="submit" class="flex-1 py-2.5 bg-sky-600 hover:bg-sky-500 rounded-xl text-sm font-bold">Guardar</button>
+    </div>
+  </form>
+</div>
+
+<script>
+const SUPA_URL = 'https://syshosukdpsiudelwuqz.supabase.co';
+const SUPA_KEY = 'sb_publishable_vQPvDpmWTZCH0O6xfQcBlA_ig91xeUf';
+const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+const $ = id => document.getElementById(id);
+const esc = s => IPC.esc(s);
+
+let editCursoId = null, editDictadoId = null, dictadoCursoId = null;
+let counts = {};   // key → { q: n, l: n }  (key = 'c:<id>' o 'd:<id>')
+
+async function load() {
+  $('loading').classList.remove('hidden');
+  $('empty').classList.add('hidden');
+  $('list').innerHTML = '';
+  const ok = await IPC.init();
+  $('loading').classList.add('hidden');
+  if (!ok) { $('msg-setup').classList.remove('hidden'); return; }
+  $('msg-setup').classList.add('hidden');
+
+  counts = {};
+  const [q, l] = await Promise.all([
+    sb.from('quizzes').select('curso_id, dictado_id'),
+    sb.from('participant_lists').select('curso_id, dictado_id')
+  ]);
+  const bump = (k, f) => { counts[k] = counts[k] || { q: 0, l: 0 }; counts[k][f]++; };
+  (q.data || []).forEach(r => { if (r.curso_id) bump('c:' + r.curso_id, 'q'); if (r.dictado_id) bump('d:' + r.dictado_id, 'q'); });
+  (l.data || []).forEach(r => { if (r.curso_id) bump('c:' + r.curso_id, 'l'); if (r.dictado_id) bump('d:' + r.dictado_id, 'l'); });
+
+  if (!IPC.cursos.length) { $('empty').classList.remove('hidden'); return; }
+  render();
+}
+
+function render() {
+  $('list').innerHTML = IPC.cursos.map(c => {
+    const ds = IPC.dictadosDe(c.id);
+    const cc = counts['c:' + c.id] || { q: 0, l: 0 };
+    const dictadosHtml = ds.length ? ds.map(d => {
+      const dc = counts['d:' + d.id] || { q: 0, l: 0 };
+      const fechas = [d.fecha_inicio, d.fecha_fin].filter(Boolean)
+        .map(f => new Date(f + 'T00:00:00').toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' })).join(' – ');
+      return `
+        <div class="flex flex-wrap items-center gap-3 bg-slate-900/70 border border-slate-700/60 rounded-xl px-4 py-3">
+          <i class="fa-regular fa-calendar text-slate-500"></i>
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-semibold text-white">${esc(d.nombre)}</div>
+            <div class="text-xs text-slate-500">${fechas || 'Sin fechas'} · ${dc.q} cuestionario${dc.q !== 1 ? 's' : ''} propio${dc.q !== 1 ? 's' : ''} · ${dc.l} lista${dc.l !== 1 ? 's' : ''}</div>
+          </div>
+          <button onclick="openDictadoModal('${c.id}','${d.id}')" aria-label="Editar dictado" class="w-10 h-10 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm"><i class="fa-solid fa-pen"></i></button>
+          <button onclick="deleteDictado('${d.id}')" aria-label="Eliminar dictado" class="w-10 h-10 rounded-lg bg-red-900/40 hover:bg-red-700/60 text-red-300 text-sm"><i class="fa-solid fa-trash"></i></button>
+        </div>`;
+    }).join('') : `<p class="text-xs text-slate-500 italic px-1">Sin dictados todavía.</p>`;
+
+    return `
+    <section class="glass rounded-2xl border border-slate-700/50 p-5 space-y-3 fade-in">
+      <div class="flex flex-wrap items-start gap-3">
+        <div class="w-11 h-11 rounded-xl bg-sky-900/60 flex items-center justify-center text-sky-300 text-xl shrink-0"><i class="fa-solid fa-graduation-cap"></i></div>
+        <div class="flex-1 min-w-0">
+          <h2 class="font-bold text-white">${esc(c.nombre)}</h2>
+          ${c.descripcion ? `<p class="text-sm text-slate-400">${esc(c.descripcion)}</p>` : ''}
+          <p class="text-xs text-slate-500 mt-0.5">${ds.length} dictado${ds.length !== 1 ? 's' : ''} · ${cc.q} cuestionario${cc.q !== 1 ? 's' : ''} · ${cc.l} lista${cc.l !== 1 ? 's' : ''}
+            ${c.drive_url ? ` · <a href="${esc(c.drive_url)}" target="_blank" rel="noopener" class="text-sky-400 hover:text-sky-300"><i class="fa-brands fa-google-drive"></i> Carpeta en Drive</a>` : ''}</p>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="openDictadoModal('${c.id}')" class="px-3 h-10 rounded-lg bg-sky-700 hover:bg-sky-600 text-xs font-semibold"><i class="fa-solid fa-plus mr-1"></i>Dictado</button>
+          <button onclick="openCursoModal('${c.id}')" aria-label="Editar curso" class="w-10 h-10 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm"><i class="fa-solid fa-pen"></i></button>
+          <button onclick="deleteCurso('${c.id}')" aria-label="Eliminar curso" class="w-10 h-10 rounded-lg bg-red-900/40 hover:bg-red-700/60 text-red-300 text-sm"><i class="fa-solid fa-trash"></i></button>
+        </div>
+      </div>
+      <div class="space-y-2 pl-0 sm:pl-14">${dictadosHtml}</div>
+    </section>`;
+  }).join('');
+}
+
+function closeModals() { $('modal-curso').classList.add('hidden'); $('modal-dictado').classList.add('hidden'); }
+
+function openCursoModal(id = null) {
+  editCursoId = id;
+  const c = id ? IPC.curso(id) : null;
+  $('curso-title').textContent = c ? 'Editar curso' : 'Nuevo curso';
+  $('c-nombre').value = c ? c.nombre : '';
+  $('c-desc').value   = c ? (c.descripcion || '') : '';
+  $('c-drive').value  = c ? (c.drive_url || '') : '';
+  $('modal-curso').classList.remove('hidden');
+  $('c-nombre').focus();
+}
+
+async function saveCurso(ev) {
+  ev.preventDefault();
+  const payload = { nombre: $('c-nombre').value.trim(), descripcion: $('c-desc').value.trim() || null, drive_url: $('c-drive').value.trim() || null };
+  if (!payload.nombre) return;
+  const { error } = editCursoId
+    ? await sb.from('cursos').update(payload).eq('id', editCursoId)
+    : await sb.from('cursos').insert(payload);
+  if (error) { alert('Error al guardar: ' + error.message); return; }
+  closeModals(); load();
+}
+
+async function deleteCurso(id) {
+  const c = IPC.curso(id);
+  const cc = counts['c:' + id] || { q: 0, l: 0 };
+  if (!confirm(`¿Eliminar el curso "${c.nombre}" y todos sus dictados?\n\nSus ${cc.q} cuestionario(s) y ${cc.l} lista(s) NO se borran: quedan "sin curso".`)) return;
+  const { error } = await sb.from('cursos').delete().eq('id', id);
+  if (error) { alert('Error al eliminar: ' + error.message); return; }
+  load();
+}
+
+function openDictadoModal(cursoId, id = null) {
+  dictadoCursoId = cursoId; editDictadoId = id;
+  const d = id ? IPC.dictado(id) : null;
+  $('dictado-title').textContent = d ? 'Editar dictado' : 'Nuevo dictado';
+  $('dictado-curso').textContent = IPC.curso(cursoId)?.nombre || '';
+  $('d-nombre').value = d ? d.nombre : '';
+  $('d-ini').value = d ? (d.fecha_inicio || '') : '';
+  $('d-fin').value = d ? (d.fecha_fin || '') : '';
+  $('modal-dictado').classList.remove('hidden');
+  $('d-nombre').focus();
+}
+
+async function saveDictado(ev) {
+  ev.preventDefault();
+  const payload = { curso_id: dictadoCursoId, nombre: $('d-nombre').value.trim(), fecha_inicio: $('d-ini').value || null, fecha_fin: $('d-fin').value || null };
+  if (!payload.nombre) return;
+  const { error } = editDictadoId
+    ? await sb.from('dictados').update(payload).eq('id', editDictadoId)
+    : await sb.from('dictados').insert(payload);
+  if (error) { alert('Error al guardar: ' + error.message); return; }
+  closeModals(); load();
+}
+
+async function deleteDictado(id) {
+  const d = IPC.dictado(id);
+  const dc = counts['d:' + id] || { q: 0, l: 0 };
+  if (!confirm(`¿Eliminar el dictado "${d.nombre}"?\n\nSus ${dc.q} cuestionario(s) y ${dc.l} lista(s) NO se borran: siguen en el curso, sin dictado.`)) return;
+  const { error } = await sb.from('dictados').delete().eq('id', id);
+  if (error) { alert('Error al eliminar: ' + error.message); return; }
+  load();
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModals(); });
+load();
+</script>
+</body>
+</html>

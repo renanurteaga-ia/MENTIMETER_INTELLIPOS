@@ -9,6 +9,7 @@ Plataforma de cuestionarios y exámenes en tiempo real. El presentador lanza ses
 | App principal (sesiones en vivo) | https://intellipos-quiz-app.vercel.app |
 | Preparación de cuestionarios | https://intellipos-quiz-app.vercel.app/quiz-prep.html |
 | Preparación de listas de participantes | https://intellipos-quiz-app.vercel.app/student-list-prep.html |
+| Cursos y dictados | https://intellipos-quiz-app.vercel.app/cursos.html |
 
 ---
 
@@ -41,13 +42,14 @@ La app está compuesta por `index.html` más **14 módulos JavaScript externos**
 
 ### Preparación (antes de la sesión)
 
-1. **Cuestionario** — Abre `/quiz-prep.html`, crea un nuevo cuestionario pegando el TSV desde Google Sheets, previsualiza y guarda en la biblioteca.
-2. **Lista de participantes** — Abre `/student-list-prep.html`, pega el padrón (Código · Apellido Paterno · Apellido Materno · Nombres) y guarda la lista.
+0. **Curso y dictado** — Abre `/cursos.html`, crea el curso (con el enlace a su carpeta de Drive) y un dictado por cada vez que se dicta (ej. "2026-II · Sección A").
+1. **Cuestionario** — Abre `/quiz-prep.html`, crea un nuevo cuestionario con **Importar Excel** (plantillas de `MENTIMETER1/_Plantillas` en Drive) o pegando el TSV desde Google Sheets. Asigna curso, dictado (o "todos los dictados del curso" para reutilizarlo) y tipo de prueba (parcial, final o práctica), previsualiza y guarda.
+2. **Lista de participantes** — Abre `/student-list-prep.html`, importa la plantilla de Excel o pega el padrón (Código · Apellido Paterno · Apellido Materno · Nombres), asigna curso y dictado, y guarda la lista.
 
 ### El día de la sesión
 
 1. Abre la app principal e inicia sesión.
-2. Selecciona el cuestionario y la lista de participantes.
+2. Filtra por curso, dictado y tipo de prueba; selecciona el cuestionario y la lista de participantes. Si el cuestionario tiene tipo de prueba, queda preseleccionado en la modalidad Examen.
 3. Elige modalidad (Cuestionario interactivo o Examen individual) y tipo de acceso (Abierta o Cerrada).
 4. Crea la sesión y comparte el código QR o el enlace con los participantes.
 5. Al finalizar, los resultados quedan registrados en Supabase y disponibles en **Historial**.
@@ -257,6 +259,10 @@ El campo `data` (jsonb) de la tabla `quiz_session` contiene todo el estado de un
 | `participant_lists` | Listas de participantes | `id`, `nombre`, `lista` (jsonb) |
 | `session_results` | Resultados individuales por sesión | `quiz_session_id`, `quiz_id`, `participante_codigo`, `respuestas` (jsonb), `puntaje_obtenido`, `puntaje_posible`, `nota` (MC), `puntaje_total` (PONDERADA), `rango_obtenido` (jsonb), `rangos_dim_obtenidos` (jsonb, NIVEL-RANGO) |
 | `authorized_users` | Presentadores autorizados | `email`, `activo`, `nombre` |
+| `cursos` | Cursos | `id`, `nombre`, `descripcion`, `drive_url` |
+| `dictados` | Cada vez que se dicta un curso | `id`, `curso_id`, `nombre`, `fecha_inicio`, `fecha_fin` |
+
+`quizzes` y `participant_lists` tienen además `curso_id` y `dictado_id` (un cuestionario con `dictado_id` vacío sirve para todos los dictados de su curso); `quizzes` tiene `tipo_prueba` (`parcial` · `final` · `practica`). Se crean con `supabase_cursos.sql` (ejecutar una vez en el SQL Editor). Mientras no se ejecute, la app funciona como antes, sin los selectores de curso.
 
 Storage: bucket `quiz-images` (público).
 

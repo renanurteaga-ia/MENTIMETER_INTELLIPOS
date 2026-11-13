@@ -7,6 +7,8 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="/cursos-common.js"></script>
 <style>
   body { background: #0f172a; font-family: system-ui, sans-serif; }
   .glass { background: rgba(30,41,59,0.85); backdrop-filter: blur(12px); }
@@ -28,7 +30,13 @@
       <div class="text-xs text-indigo-400">Biblioteca de Cuestionarios</div>
     </div>
   </div>
-  <div class="ml-auto">
+  <div class="ml-auto flex items-center gap-4">
+    <a href="/cursos.html" class="text-slate-400 hover:text-white text-sm flex items-center gap-1 transition-colors">
+      <i class="fa-solid fa-graduation-cap"></i> Cursos
+    </a>
+    <a href="/student-list-prep.html" class="text-slate-400 hover:text-white text-sm flex items-center gap-1 transition-colors">
+      <i class="fa-solid fa-users"></i> Participantes
+    </a>
     <button onclick="showCreateView()" class="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-sm font-semibold transition-colors">
       <i class="fa-solid fa-plus"></i> Nuevo cuestionario
     </button>
@@ -45,6 +53,24 @@
       <button onclick="loadLibrary()" class="text-slate-400 hover:text-white text-sm flex items-center gap-1 transition-colors">
         <i class="fa-solid fa-rotate-right"></i> Actualizar
       </button>
+    </div>
+
+    <!-- Filtros por curso / dictado / tipo de prueba -->
+    <div id="lib-filters" class="hidden glass rounded-2xl border border-slate-700/50 p-4 mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <label class="text-xs font-semibold text-slate-400 space-y-1">Curso
+        <select id="f-curso" onchange="onFilterCurso()" class="w-full bg-slate-900 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white"></select>
+      </label>
+      <label class="text-xs font-semibold text-slate-400 space-y-1">Dictado
+        <select id="f-dictado" onchange="renderLibrary()" class="w-full bg-slate-900 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white"></select>
+      </label>
+      <label class="text-xs font-semibold text-slate-400 space-y-1">Tipo de prueba
+        <select id="f-tipo" onchange="renderLibrary()" class="w-full bg-slate-900 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white">
+          <option value="">Todos</option>
+          <option value="parcial">Examen parcial</option>
+          <option value="final">Examen final</option>
+          <option value="practica">Práctica</option>
+        </select>
+      </label>
     </div>
 
     <!-- Loading -->
@@ -81,11 +107,39 @@
         class="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 text-sm">
     </div>
 
+    <!-- Curso / dictado / tipo de prueba -->
+    <div id="clasif-panel" class="hidden glass rounded-2xl border border-sky-800/60 p-5 space-y-3">
+      <label class="block text-sm font-semibold text-slate-300"><i class="fa-solid fa-graduation-cap text-sky-400 mr-1"></i> Curso, dictado y tipo de prueba</label>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <label class="text-xs font-semibold text-slate-400 space-y-1">Curso
+          <select id="q-curso" onchange="IPC.fillDictados($('q-dictado'), this.value, { first: 'Todos los dictados del curso' })" class="w-full bg-slate-900 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white"></select>
+        </label>
+        <label class="text-xs font-semibold text-slate-400 space-y-1">Dictado
+          <select id="q-dictado" class="w-full bg-slate-900 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white"></select>
+        </label>
+        <label class="text-xs font-semibold text-slate-400 space-y-1">Tipo de prueba
+          <select id="q-tipo" class="w-full bg-slate-900 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white">
+            <option value="">Sin especificar</option>
+            <option value="parcial">Examen parcial</option>
+            <option value="final">Examen final</option>
+            <option value="practica">Práctica</option>
+          </select>
+        </label>
+      </div>
+      <p class="text-xs text-slate-500">«Todos los dictados del curso» permite reutilizar el cuestionario cada vez que se dicte. ¿Falta un curso o dictado? <a href="/cursos.html" target="_blank" class="text-sky-400 hover:text-sky-300">Créalo aquí</a> y pulsa <button type="button" onclick="reloadCursos()" class="text-sky-400 hover:text-sky-300 underline">actualizar</button>.</p>
+    </div>
+
     <!-- Paste TSV -->
     <div class="glass rounded-2xl border border-slate-700/50 p-5 space-y-3">
-      <label class="block text-sm font-semibold text-slate-300">
-        Preguntas <span class="text-slate-500 font-normal">(pega desde Google Sheets)</span>
-      </label>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <label class="block text-sm font-semibold text-slate-300">
+          Preguntas <span class="text-slate-500 font-normal">(importa la plantilla de Excel o pega desde Google Sheets)</span>
+        </label>
+        <label class="cursor-pointer flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-xl text-sm font-semibold transition-colors">
+          <i class="fa-solid fa-file-excel"></i> <span id="xls-label">Importar Excel</span>
+          <input type="file" accept=".xlsx,.xls,.csv,.tsv" class="hidden" onchange="importExcel(this)">
+        </label>
+      </div>
       <p class="text-xs text-slate-500">
         Columnas: Pregunta · Opción A · B · C · D · Correcta/Tipo · URL imagen · Puntaje · Sesión · Tópico · PtjA · PtjB · PtjC · PtjD<br>
         Para una <span class="text-amber-400 font-semibold">pregunta abierta</span>, pon
@@ -162,6 +216,7 @@ let parsedRangosDim = {};  // rangos por dimensión para NIVEL-RANGO: { dimN: [{
 let editingQuizId   = null;
 let deleteTargetId  = null;
 let quizMap         = {};   // id → quiz completo, para evitar problemas con comillas en onclick
+let allQuizzes      = [];   // biblioteca completa (se filtra por curso/dictado/tipo en renderLibrary)
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -295,6 +350,7 @@ function showCreateView(quiz = null) {
   $('save-status').textContent = '';
   const saveBtn = document.querySelector('#image-panel button[onclick="saveQuiz()"]');
   if (saveBtn) saveBtn.disabled = false;
+  setClasif(quiz);
 
   if (quiz) {
     editingQuizId = quiz.id;
@@ -342,7 +398,8 @@ async function loadLibrary() {
   $('lib-empty').classList.add('hidden');
   $('lib-list').classList.add('hidden');
 
-  const { data, error } = await sb.from('quizzes').select('id, nombre, creado_en, preguntas, rangos').order('creado_en', { ascending: false });
+  // select('*') funciona con o sin las columnas nuevas de curso/dictado/tipo_prueba
+  const { data, error } = await sb.from('quizzes').select('*').order('creado_en', { ascending: false });
 
   $('lib-loading').classList.add('hidden');
 
@@ -352,18 +409,30 @@ async function loadLibrary() {
     return;
   }
 
-  if (!data || data.length === 0) {
-    $('lib-loading').classList.add('hidden');
-    $('lib-empty').classList.remove('hidden');
-    return;
-  }
-
-  $('lib-list').classList.remove('hidden');
+  allQuizzes = data || [];
   // Guardar en mapa para acceso seguro (evita problema con comillas en onclick)
   quizMap = {};
-  data.forEach(q => { quizMap[q.id] = q; });
+  allQuizzes.forEach(q => { quizMap[q.id] = q; });
+  renderLibrary();
+}
 
-  $('lib-list').innerHTML = data.map(q => {
+function renderLibrary() {
+  const f = IPC.enabled
+    ? allQuizzes.filter(q => IPC.matches(q, $('f-curso').value, $('f-dictado').value, $('f-tipo').value, { dictadoOpcional: true }))
+    : allQuizzes;
+
+  if (f.length === 0) {
+    $('lib-list').classList.add('hidden');
+    $('lib-empty').classList.remove('hidden');
+    $('lib-empty').querySelector('p').textContent = allQuizzes.length
+      ? 'No hay cuestionarios con estos filtros'
+      : 'Aún no tienes cuestionarios guardados';
+    return;
+  }
+  $('lib-empty').classList.add('hidden');
+  $('lib-list').classList.remove('hidden');
+
+  $('lib-list').innerHTML = f.map(q => {
     const nPreguntas = Array.isArray(q.preguntas) ? q.preguntas.length : 0;
     const nImgs = Array.isArray(q.preguntas) ? q.preguntas.filter(p => p.imageUrl).length : 0;
     const fecha = new Date(q.creado_en).toLocaleDateString('es', { day:'2-digit', month:'short', year:'numeric' });
@@ -383,6 +452,7 @@ async function loadLibrary() {
           ${nImgs > 0 ? `· ${nImgs} con imagen` : ''}
           · ${fecha}
         </p>
+        ${IPC.badges(q)}
       </div>
       <div class="flex items-center gap-2 flex-shrink-0">
         <button onclick="editQuiz('${q.id}')" title="Editar"
@@ -550,12 +620,19 @@ async function saveQuiz() {
     rangosToSave.push({ _dim: true, data: parsedRangosDim });
   }
 
+  const payload = { nombre, preguntas: parsedQuestions, rangos: rangosToSave };
+  if (IPC.enabled) {
+    payload.curso_id    = $('q-curso').value || null;
+    payload.dictado_id  = payload.curso_id ? ($('q-dictado').value || null) : null;
+    payload.tipo_prueba = $('q-tipo').value || null;
+  }
+
   try {
     if (editingQuizId) {
-      const { error } = await sb.from('quizzes').update({ nombre, preguntas: parsedQuestions, rangos: rangosToSave }).eq('id', editingQuizId);
+      const { error } = await sb.from('quizzes').update(payload).eq('id', editingQuizId);
       if (error) throw error;
     } else {
-      const { error } = await sb.from('quizzes').insert({ nombre, preguntas: parsedQuestions, rangos: rangosToSave });
+      const { error } = await sb.from('quizzes').insert(payload);
       if (error) throw error;
     }
     $('save-status').innerHTML = '<i class="fa-solid fa-check-circle text-emerald-400"></i> <span class="text-emerald-400">¡Guardado correctamente!</span>';
@@ -594,8 +671,69 @@ async function confirmDelete() {
   loadLibrary();
 }
 
+// ── Cursos / dictados / tipo de prueba ───────────────────────────────────────
+function setupCursoFilters() {
+  if (!IPC.enabled) return;
+  $('lib-filters').classList.remove('hidden');
+  IPC.fillCursos($('f-curso'), { first: 'Todos los cursos', sinCurso: true });
+  IPC.fillDictados($('f-dictado'), $('f-curso').value);
+  IPC.fillCursos($('q-curso'));
+  IPC.fillDictados($('q-dictado'), $('q-curso').value, { first: 'Todos los dictados del curso' });
+}
+
+function onFilterCurso() {
+  IPC.fillDictados($('f-dictado'), $('f-curso').value);
+  renderLibrary();
+}
+
+// Rellena los selectores del formulario. Un cuestionario nuevo hereda el curso/dictado del filtro activo.
+function setClasif(quiz) {
+  if (!IPC.enabled) return;
+  $('clasif-panel').classList.remove('hidden');
+  const fc = $('f-curso').value;
+  const cursoId   = quiz ? (quiz.curso_id || '') : (fc && fc !== '__none' ? fc : '');
+  const dictadoId = quiz ? (quiz.dictado_id || '') : $('f-dictado').value;
+  $('q-curso').value = cursoId;
+  IPC.fillDictados($('q-dictado'), cursoId, { first: 'Todos los dictados del curso' });
+  $('q-dictado').value = dictadoId;
+  $('q-tipo').value = quiz ? (quiz.tipo_prueba || '') : $('f-tipo').value;
+}
+
+async function reloadCursos() {
+  const c = $('q-curso').value, d = $('q-dictado').value;
+  await IPC.init();
+  setupCursoFilters();
+  $('q-curso').value = c;
+  IPC.fillDictados($('q-dictado'), c, { first: 'Todos los dictados del curso' });
+  $('q-dictado').value = d;
+}
+
+// ── Importar plantilla de Excel ──────────────────────────────────────────────
+async function importExcel(input) {
+  const file = input.files[0];
+  input.value = '';
+  if (!file) return;
+  $('xls-label').textContent = 'Leyendo…';
+  try {
+    const tsv = await IPC.excelToTSV(file, ['Cuestionario', 'Preguntas']);
+    $('sheet-input').value = tsv;
+    if (!$('quiz-name').value.trim()) {
+      $('quiz-name').value = file.name.replace(/\.(xlsx|xls|csv|tsv)$/i, '').replace(/[_]+/g, ' ').trim();
+    }
+    parseAndPreview();
+  } catch (err) {
+    alert('No se pudo leer el archivo: ' + (err.message || err));
+  } finally {
+    $('xls-label').textContent = 'Importar Excel';
+  }
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
-loadLibrary();
+(async () => {
+  await IPC.init();
+  setupCursoFilters();
+  loadLibrary();
+})();
 </script>
 </body>
 </html>

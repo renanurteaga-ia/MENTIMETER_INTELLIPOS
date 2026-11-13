@@ -10,6 +10,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="/cursos-common.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
     <style>
@@ -111,6 +112,10 @@
                     <p class="text-slate-400 text-sm">Pega las celdas copiadas de Google Sheets: Pregunta · Opción A · B · C · D · Correcta · URL Imagen (opcional)</p>
                 </div>
                 <div class="ml-4 shrink-0 flex gap-2">
+                    <a href="/cursos.html" target="_blank" title="Cursos y dictados"
+                        class="text-xs px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-sky-600 rounded-xl text-slate-400 hover:text-sky-300 transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-graduation-cap"></i> Cursos
+                    </a>
                     <button onclick="initHistorial()" title="Historial de sesiones"
                         class="text-xs px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-emerald-600 rounded-xl text-slate-400 hover:text-emerald-300 transition flex items-center gap-1.5">
                         <i class="fa-solid fa-clock-rotate-left"></i> Historial
@@ -124,6 +129,32 @@
                         <i class="fa-solid fa-robot"></i> IAs
                     </button>
                 </div>
+            </div>
+
+            <!-- Curso, dictado y tipo de prueba: filtran cuestionarios y listas -->
+            <div id="session-cursos" class="hidden bg-slate-800/80 border border-sky-700/60 rounded-2xl p-5 shadow-2xl space-y-3">
+                <div class="flex items-center justify-between">
+                    <label class="text-xs font-semibold text-sky-300 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-graduation-cap"></i> Curso y dictado
+                    </label>
+                    <button onclick="reloadSessionCursos()" class="text-slate-500 hover:text-slate-300 text-xs transition">
+                        <i class="fa-solid fa-rotate-right"></i> Actualizar
+                    </button>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <select id="s-curso" onchange="onSessionCurso()" aria-label="Curso"
+                        class="bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-sky-500 transition"></select>
+                    <select id="s-dictado" onchange="onSessionFiltro()" aria-label="Dictado"
+                        class="bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-sky-500 transition"></select>
+                    <select id="s-tipo" onchange="onSessionFiltro()" aria-label="Tipo de prueba"
+                        class="bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-sky-500 transition">
+                        <option value="">Cualquier tipo de prueba</option>
+                        <option value="parcial">Examen parcial</option>
+                        <option value="final">Examen final</option>
+                        <option value="practica">Práctica</option>
+                    </select>
+                </div>
+                <p class="text-xs text-slate-500">Filtra los cuestionarios y las listas de abajo. Los cuestionarios del curso sin dictado asignado aparecen en todos sus dictados.</p>
             </div>
 
             <!-- Selector de biblioteca -->
@@ -1012,6 +1043,7 @@
             $('user-info').classList.remove('hidden');
             $('user-info').classList.add('flex');
             showView('view-setup');
+            await initSessionCursos();
             refreshLibrarySelector();
             refreshListSelector();
         } catch(e) {
@@ -1187,19 +1219,31 @@
     async function refreshLibrarySelector() {
         const sel = $('library-select');
         sel.innerHTML = '<option value="">Cargando…</option>';
-        const { data, error } = await sb.from('quizzes').select('id, nombre, preguntas, rangos').order('creado_en', { ascending: false });
-        sel.innerHTML = '<option value="">— Selecciona un cuestionario guardado —</option>';
-        if (!error && data && data.length) {
-            data.forEach(q => {
-                const n = Array.isArray(q.preguntas) ? q.preguntas.length : 0;
-                const opt = document.createElement('option');
-                opt.value = q.id;
-                opt.textContent = `${q.nombre}  (${n} preguntas)`;
-                opt.dataset.preguntas = JSON.stringify(q.preguntas);
-                opt.dataset.rangos    = JSON.stringify(q.rangos || []);
-                sel.appendChild(opt);
-            });
-        }
+        // select('*') funciona con o sin las columnas de curso/dictado/tipo_prueba
+        const { data, error } = await sb.from('quizzes').select('*').order('creado_en', { ascending: false });
+        libQuizzes = (!error && data) ? data : [];
+        renderLibrarySelector();
+    }
+
+    function renderLibrarySelector() {
+        const sel = $('library-select');
+        const prev = sel.value;
+        const data = IPC.enabled
+            ? libQuizzes.filter(q => IPC.matches(q, $('s-curso').value, $('s-dictado').value, $('s-tipo').value, { dictadoOpcional: true }))
+            : libQuizzes;
+        sel.innerHTML = `<option value="">${data.length ? '— Selecciona un cuestionario guardado —' : '— No hay cuestionarios con este filtro —'}</option>`;
+        data.forEach(q => {
+            const n = Array.isArray(q.preguntas) ? q.preguntas.length : 0;
+            const opt = document.createElement('option');
+            opt.value = q.id;
+            const tipo = q.tipo_prueba && IPC.TIPOS[q.tipo_prueba] ? ` · ${IPC.TIPOS[q.tipo_prueba]}` : '';
+            opt.textContent = `${q.nombre}  (${n} preguntas${tipo})`;
+            opt.dataset.preguntas = JSON.stringify(q.preguntas);
+            opt.dataset.rangos    = JSON.stringify(q.rangos || []);
+            opt.dataset.tipo      = q.tipo_prueba || '';
+            sel.appendChild(opt);
+        });
+        if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
     }
 
     // ── Selector de lista de participantes ────────────────────────────────────
@@ -1211,14 +1255,24 @@
         let data = null, fetchError = false;
         try {
             const res = await fetch(
-                SUPABASE_URL + '/rest/v1/participant_lists?select=id,nombre,lista&order=creado_en.desc',
+                SUPABASE_URL + '/rest/v1/participant_lists?select=*&order=creado_en.desc',
                 { headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY } }
             );
             if (res.ok) data = await res.json();
             else fetchError = true;
         } catch(_) { fetchError = true; }
+        libLists = (!fetchError && data) ? data : [];
+        renderListSelector();
+    }
+
+    function renderListSelector() {
+        const sel = $('list-select');
+        const prev = sel.value;
+        const data = IPC.enabled
+            ? libLists.filter(l => IPC.matches(l, $('s-curso').value, $('s-dictado').value, '', { dictadoOpcional: true }))
+            : libLists;
         sel.innerHTML = '<option value="">— Sin lista (acceso abierto por nickname) —</option>';
-        if (!fetchError && data && data.length) {
+        if (data.length) {
             data.forEach(lst => {
                 const n = Array.isArray(lst.lista) ? lst.lista.length : 0;
                 const opt = document.createElement('option');
@@ -1229,6 +1283,7 @@
                 sel.appendChild(opt);
             });
         }
+        if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
     }
 
     function loadFromListLibrary() {
@@ -1285,7 +1340,46 @@
         $('image-upload-panel').classList.add('hidden');
         $('btn-preview-wrap').classList.add('hidden');
         $('btn-launch-library').classList.remove('hidden');
+        // Si el cuestionario tiene tipo de prueba, preseleccionarlo para la modalidad Examen
+        const tipoPrueba = opt.dataset.tipo;
+        if (tipoPrueba) {
+            const radio = document.querySelector(`input[name="exam-type"][value="${tipoPrueba}"]`);
+            if (radio) radio.checked = true;
+        }
         updateBancoHint();
+    }
+
+    // ── Curso / dictado / tipo de prueba (filtros del setup) ──────────────────
+    let libQuizzes = [];   // cuestionarios cargados (sin filtrar)
+    let libLists   = [];   // listas cargadas (sin filtrar)
+
+    async function initSessionCursos() {
+        try {
+            if (!(await IPC.init())) return;
+            $('session-cursos').classList.remove('hidden');
+            IPC.fillCursos($('s-curso'), { first: 'Todos los cursos', sinCurso: true });
+            IPC.fillDictados($('s-dictado'), $('s-curso').value);
+        } catch (e) { console.warn('[cursos]', e); }
+    }
+
+    async function reloadSessionCursos() {
+        const c = $('s-curso').value, d = $('s-dictado').value;
+        await initSessionCursos();
+        $('s-curso').value = c;
+        IPC.fillDictados($('s-dictado'), $('s-curso').value);
+        $('s-dictado').value = d;
+        refreshLibrarySelector();
+        refreshListSelector();
+    }
+
+    function onSessionCurso() {
+        IPC.fillDictados($('s-dictado'), $('s-curso').value);
+        onSessionFiltro();
+    }
+
+    function onSessionFiltro() {
+        renderLibrarySelector();
+        renderListSelector();
     }
 
     // ── NORMALIZACIÓN DE TIPO DE PREGUNTA ────────────────────────────────────
