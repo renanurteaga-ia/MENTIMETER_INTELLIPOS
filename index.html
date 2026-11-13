@@ -104,6 +104,97 @@
             <p class="text-center text-xs text-slate-600">¿No tienes acceso? Contacta al administrador.</p>
         </section>
 
+        <!-- ── VISTA 0.5: INICIO (Presentador) ─────────────────────────────── -->
+        <section id="view-home" class="hidden my-auto max-w-4xl mx-auto w-full space-y-8 py-6 fade-in flex-col">
+            <div class="text-center space-y-2">
+                <p class="text-xs font-semibold uppercase tracking-widest text-indigo-400">Bienvenido</p>
+                <h2 class="text-3xl font-extrabold text-white">Hola, <span id="home-nombre">presentador</span></h2>
+                <p class="text-slate-400 text-sm">¿Qué quieres hacer hoy?</p>
+            </div>
+
+            <!-- Acción principal -->
+            <button onclick="goToSetup()"
+                class="w-full text-left bg-indigo-600 hover:bg-indigo-500 border border-indigo-500 rounded-2xl p-6 shadow-2xl shadow-indigo-500/20 transition flex items-center gap-5">
+                <span class="w-14 h-14 rounded-2xl bg-white/15 flex items-center justify-center text-2xl shrink-0"><i class="fa-solid fa-play"></i></span>
+                <span class="flex-1 min-w-0">
+                    <span class="block text-xl font-extrabold text-white">Iniciar cuestionario o examen</span>
+                    <span class="block text-sm text-indigo-100 mt-1">Elige curso, dictado, cuestionario y lista, y comparte el código con los participantes.</span>
+                </span>
+                <i class="fa-solid fa-arrow-right text-xl text-white/80"></i>
+            </button>
+
+            <!-- Preparación -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <a href="/cursos.html" class="block bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 hover:border-sky-500 rounded-2xl p-5 transition space-y-3">
+                    <span class="w-12 h-12 rounded-xl bg-sky-900/60 text-sky-300 flex items-center justify-center text-xl"><i class="fa-solid fa-graduation-cap"></i></span>
+                    <span class="block text-lg font-bold text-white">Cursos</span>
+                    <span class="block text-sm text-slate-400">Crea cursos y sus dictados (cada vez que se dictan).</span>
+                    <span class="inline-flex items-center gap-1 text-sm font-semibold text-sky-300">Crear o editar <i class="fa-solid fa-arrow-right text-xs"></i></span>
+                </a>
+                <a href="/quiz-prep.html" class="block bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 hover:border-indigo-500 rounded-2xl p-5 transition space-y-3">
+                    <span class="w-12 h-12 rounded-xl bg-indigo-900/60 text-indigo-300 flex items-center justify-center text-xl"><i class="fa-solid fa-list-check"></i></span>
+                    <span class="block text-lg font-bold text-white">Cuestionarios</span>
+                    <span class="block text-sm text-slate-400">Crea, importa desde Excel, modifica o elimina cuestionarios y exámenes.</span>
+                    <span class="inline-flex items-center gap-1 text-sm font-semibold text-indigo-300">Crear o editar <i class="fa-solid fa-arrow-right text-xs"></i></span>
+                </a>
+                <a href="/student-list-prep.html" class="block bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 hover:border-emerald-500 rounded-2xl p-5 transition space-y-3">
+                    <span class="w-12 h-12 rounded-xl bg-emerald-900/60 text-emerald-300 flex items-center justify-center text-xl"><i class="fa-solid fa-users"></i></span>
+                    <span class="block text-lg font-bold text-white">Listas de participantes</span>
+                    <span class="block text-sm text-slate-400">Crea, importa desde Excel, consulta o elimina listas y ve sus resultados.</span>
+                    <span class="inline-flex items-center gap-1 text-sm font-semibold text-emerald-300">Crear o editar <i class="fa-solid fa-arrow-right text-xs"></i></span>
+                </a>
+            </div>
+
+            <!-- Accesos secundarios -->
+            <div class="flex flex-wrap justify-center gap-3">
+                <button onclick="initHistorial()" class="min-h-[44px] px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-emerald-600 text-sm text-slate-300 transition flex items-center gap-2">
+                    <i class="fa-solid fa-clock-rotate-left"></i> Historial de sesiones
+                </button>
+                <button onclick="initBanco()" class="min-h-[44px] px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-amber-600 text-sm text-slate-300 transition flex items-center gap-2">
+                    <i class="fa-solid fa-book-open"></i> Banco de preguntas
+                </button>
+                <button onclick="showPasswordView()" class="min-h-[44px] px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-indigo-500 text-sm text-slate-300 transition flex items-center gap-2">
+                    <i class="fa-solid fa-key"></i> Cambiar contraseña
+                </button>
+            </div>
+        </section>
+
+        <!-- ── CAMBIAR CONTRASEÑA ───────────────────────────────────────────── -->
+        <section id="view-password" class="hidden my-auto max-w-sm mx-auto w-full space-y-6 py-6 fade-in flex-col">
+            <button onclick="showView('view-home')" class="self-start text-sm text-slate-400 hover:text-white transition flex items-center gap-2">
+                <i class="fa-solid fa-arrow-left"></i> Volver al inicio
+            </button>
+            <div class="text-center space-y-2">
+                <div class="w-14 h-14 mx-auto rounded-2xl bg-indigo-900/60 text-indigo-300 flex items-center justify-center text-2xl"><i class="fa-solid fa-key"></i></div>
+                <h2 class="text-2xl font-extrabold text-white">Cambiar contraseña</h2>
+                <p id="pwd-email" class="text-slate-400 text-sm"></p>
+            </div>
+            <form onsubmit="changePassword(event)" class="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-6 shadow-2xl space-y-4">
+                <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Contraseña actual
+                    <input type="password" id="pwd-current" autocomplete="current-password" required
+                        class="mt-2 w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white normal-case tracking-normal focus:outline-none focus:border-indigo-500 transition">
+                </label>
+                <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Nueva contraseña
+                    <input type="password" id="pwd-new" autocomplete="new-password" required minlength="8"
+                        class="mt-2 w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white normal-case tracking-normal focus:outline-none focus:border-indigo-500 transition">
+                </label>
+                <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">Confirmar nueva contraseña
+                    <input type="password" id="pwd-confirm" autocomplete="new-password" required minlength="8"
+                        class="mt-2 w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-sm text-white normal-case tracking-normal focus:outline-none focus:border-indigo-500 transition">
+                </label>
+                <ul class="text-xs text-slate-400 bg-slate-900/60 rounded-xl px-4 py-3 space-y-1 list-disc list-inside">
+                    <li>Mínimo 8 caracteres</li>
+                    <li>Al menos una letra y un número</li>
+                    <li>Distinta de la contraseña actual</li>
+                </ul>
+                <div id="pwd-msg" class="hidden rounded-xl px-4 py-3 text-sm"></div>
+                <button id="pwd-btn" type="submit"
+                    class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition text-sm">
+                    Guardar nueva contraseña
+                </button>
+            </form>
+        </section>
+
         <!-- ── VISTA 1: CONFIGURACIÓN (Presentador) ────────────────────────── -->
         <section id="view-setup" class="my-auto max-w-2xl mx-auto w-full space-y-6 py-6 flex-col">
             <div class="flex items-start justify-between">
@@ -112,6 +203,10 @@
                     <p class="text-slate-400 text-sm">Pega las celdas copiadas de Google Sheets: Pregunta · Opción A · B · C · D · Correcta · URL Imagen (opcional)</p>
                 </div>
                 <div class="ml-4 shrink-0 flex gap-2">
+                    <button onclick="showView('view-home')" title="Volver al inicio"
+                        class="text-xs px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-indigo-500 rounded-xl text-slate-400 hover:text-white transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-house"></i> Inicio
+                    </button>
                     <a href="/cursos.html" target="_blank" title="Cursos y dictados"
                         class="text-xs px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-sky-600 rounded-xl text-slate-400 hover:text-sky-300 transition flex items-center gap-1.5">
                         <i class="fa-solid fa-graduation-cap"></i> Cursos
@@ -800,7 +895,7 @@
                     </h2>
                     <p class="text-xs text-slate-400 mt-0.5">Registra y administra los proveedores de IA disponibles.</p>
                 </div>
-                <button onclick="showView('view-setup')"
+                <button onclick="showView(returnView)"
                     class="text-xs px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-300 transition">
                     ← Volver
                 </button>
@@ -876,7 +971,7 @@
                     <h2 class="text-xl font-extrabold text-white">🕐 Historial de Sesiones</h2>
                     <p class="text-xs text-slate-500 mt-0.5">Resultados de sesiones anteriores guardados en la nube</p>
                 </div>
-                <button onclick="showView('view-setup')"
+                <button onclick="showView(returnView)"
                     class="text-xs px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-slate-400 hover:text-white transition flex items-center gap-1.5">
                     <i class="fa-solid fa-arrow-left"></i> Volver
                 </button>
@@ -914,7 +1009,7 @@
                     <h2 class="text-xl font-extrabold text-white">📚 Banco de Preguntas</h2>
                     <p class="text-xs text-slate-400 mt-0.5">Preselecciona preguntas para el Examen Parcial y el Examen Final</p>
                 </div>
-                <button onclick="showView('view-setup')"
+                <button onclick="showView(returnView)"
                     class="text-xs px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-300 transition">
                     ← Volver
                 </button>
@@ -1002,13 +1097,15 @@
     }
 
     function showView(id) {
-        ['view-login','view-setup','view-lobby-presenter','view-lobby-participant','view-presenter','view-nickname','view-participant','view-exam-presenter','view-exam-participant','view-ended','view-boleta','view-grading','view-ai-config','view-banco','view-historial'].forEach(v => {
+        ['view-login','view-home','view-password','view-setup','view-lobby-presenter','view-lobby-participant','view-presenter','view-nickname','view-participant','view-exam-presenter','view-exam-participant','view-ended','view-boleta','view-grading','view-ai-config','view-banco','view-historial'].forEach(v => {
             $(v)?.classList.add('hidden');
             $(v)?.classList.remove('flex');
         });
         $(id)?.classList.remove('hidden');
         $(id)?.classList.add('flex');
+        if (id === 'view-home' || id === 'view-setup') returnView = id;   // a dónde vuelven Historial, Banco e IAs
     }
+    var returnView = 'view-setup';   // var: puede usarse antes de esta línea sin error
 
     // Advertencia HTTPS
     if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
@@ -1032,6 +1129,7 @@
 
         try {
             const { data } = await sb.from('authorized_users').select('activo, nombre').eq('email', email).single();
+            presenterEmail = email;
             if (!data || !data.activo) {
                 await sb.auth.signOut();
                 $('login-error').textContent = 'Tu cuenta no está autorizada. Contacta al administrador.';
@@ -1042,7 +1140,8 @@
             $('user-email-display').textContent = email;
             $('user-info').classList.remove('hidden');
             $('user-info').classList.add('flex');
-            showView('view-setup');
+            $('home-nombre').textContent = (data.nombre || email.split('@')[0]).split(' ')[0];
+            showView('view-home');
             await initSessionCursos();
             refreshLibrarySelector();
             refreshListSelector();
@@ -1085,6 +1184,62 @@
         $('user-info').classList.add('hidden');
         $('user-info').classList.remove('flex');
         showView('view-login');
+    }
+
+    // ── INICIO Y CAMBIO DE CONTRASEÑA ─────────────────────────────────────────
+    var presenterEmail = '';
+
+    function goToSetup() {
+        showView('view-setup');
+        refreshLibrarySelector();
+        refreshListSelector();
+    }
+
+    function showPasswordView() {
+        $('pwd-current').value = '';
+        $('pwd-new').value = '';
+        $('pwd-confirm').value = '';
+        $('pwd-msg').classList.add('hidden');
+        $('pwd-email').textContent = presenterEmail ? 'Cuenta: ' + presenterEmail : '';
+        showView('view-password');
+        $('pwd-current').focus();
+    }
+
+    function pwdMessage(text, ok) {
+        const el = $('pwd-msg');
+        el.textContent = text;
+        el.className = 'rounded-xl px-4 py-3 text-sm ' + (ok
+            ? 'bg-emerald-900/40 border border-emerald-700/60 text-emerald-300'
+            : 'bg-red-900/40 border border-red-700/60 text-red-300');
+    }
+
+    async function changePassword(ev) {
+        ev.preventDefault();
+        const actual = $('pwd-current').value;
+        const nueva  = $('pwd-new').value;
+        const conf   = $('pwd-confirm').value;
+        if (nueva.length < 8)                          return pwdMessage('La nueva contraseña debe tener al menos 8 caracteres.', false);
+        if (!/[A-Za-z]/.test(nueva) || !/\d/.test(nueva)) return pwdMessage('La nueva contraseña debe tener al menos una letra y un número.', false);
+        if (nueva !== conf)                            return pwdMessage('La confirmación no coincide con la nueva contraseña.', false);
+        if (nueva === actual)                          return pwdMessage('La nueva contraseña debe ser distinta de la actual.', false);
+
+        const btn = $('pwd-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-2"></i>Guardando…';
+        try {
+            // Verificar la contraseña actual antes de cambiarla
+            const { error: e1 } = await sb.auth.signInWithPassword({ email: presenterEmail, password: actual });
+            if (e1) { pwdMessage('La contraseña actual no es correcta.', false); return; }
+            const { error: e2 } = await sb.auth.updateUser({ password: nueva });
+            if (e2) { pwdMessage('No se pudo cambiar la contraseña: ' + e2.message, false); return; }
+            $('pwd-current').value = $('pwd-new').value = $('pwd-confirm').value = '';
+            pwdMessage('Listo. Tu contraseña se actualizó; úsala la próxima vez que ingreses.', true);
+        } catch (err) {
+            pwdMessage('No se pudo cambiar la contraseña: ' + (err.message || err), false);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = 'Guardar nueva contraseña';
+        }
     }
 
     // Iniciar verificando sesión
