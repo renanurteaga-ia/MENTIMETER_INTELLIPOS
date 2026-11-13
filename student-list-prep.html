@@ -7,6 +7,8 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="/cursos-common.js"></script>
 <style>
   body { background: #0f172a; font-family: system-ui, sans-serif; }
   .glass { background: rgba(30,41,59,0.85); backdrop-filter: blur(12px); }
@@ -30,6 +32,9 @@
     </div>
   </div>
   <div class="ml-auto flex items-center gap-3">
+    <a href="/cursos.html" class="text-slate-400 hover:text-white text-sm flex items-center gap-1 transition-colors">
+      <i class="fa-solid fa-graduation-cap"></i> Cursos
+    </a>
     <a href="/quiz-prep.html" class="text-slate-400 hover:text-white text-sm flex items-center gap-1 transition-colors">
       <i class="fa-solid fa-book"></i> Cuestionarios
     </a>
@@ -51,6 +56,16 @@
       <button onclick="loadLibrary()" class="text-slate-400 hover:text-white text-sm flex items-center gap-1 transition-colors">
         <i class="fa-solid fa-rotate-right"></i> Actualizar
       </button>
+    </div>
+
+    <!-- Filtros por curso / dictado -->
+    <div id="lib-filters" class="hidden glass rounded-2xl border border-slate-700/50 p-4 mb-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <label class="text-xs font-semibold text-slate-400 space-y-1">Curso
+        <select id="f-curso" onchange="onFilterCurso()" class="w-full bg-slate-900 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white"></select>
+      </label>
+      <label class="text-xs font-semibold text-slate-400 space-y-1">Dictado
+        <select id="f-dictado" onchange="renderLibrary()" class="w-full bg-slate-900 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white"></select>
+      </label>
     </div>
 
     <!-- Loading -->
@@ -90,6 +105,20 @@
       <p class="text-xs text-slate-500">Incluye el nombre del curso, ciclo académico y sección/turno si aplica.</p>
     </div>
 
+    <!-- Curso / dictado -->
+    <div id="clasif-panel" class="hidden glass rounded-2xl border border-sky-800/60 p-5 space-y-3">
+      <label class="block text-sm font-semibold text-slate-300"><i class="fa-solid fa-graduation-cap text-sky-400 mr-1"></i> Curso y dictado</label>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label class="text-xs font-semibold text-slate-400 space-y-1">Curso
+          <select id="l-curso" onchange="IPC.fillDictados($('l-dictado'), this.value, { first: '— Sin dictado —' })" class="w-full bg-slate-900 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white"></select>
+        </label>
+        <label class="text-xs font-semibold text-slate-400 space-y-1">Dictado
+          <select id="l-dictado" class="w-full bg-slate-900 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-white"></select>
+        </label>
+      </div>
+      <p class="text-xs text-slate-500">¿Falta un curso o dictado? <a href="/cursos.html" target="_blank" class="text-sky-400 hover:text-sky-300">Créalo aquí</a> y pulsa <button type="button" onclick="reloadCursos()" class="text-sky-400 hover:text-sky-300 underline">actualizar</button>.</p>
+    </div>
+
     <!-- Importar alumnos -->
     <div class="glass rounded-2xl border border-slate-700/50 p-5 space-y-4">
 
@@ -114,6 +143,13 @@
             <span class="text-emerald-400 font-mono">Código · Apellido Paterno · Apellido Materno · Nombres</span>.
             La fila de encabezado se ignora automáticamente.
           </p>
+          <div class="flex items-center gap-3 mb-3">
+            <label class="flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded-xl text-sm font-semibold cursor-pointer transition-colors">
+              <i class="fa-solid fa-file-excel"></i> <span id="xls-label">Importar Excel</span>
+              <input type="file" accept=".xlsx,.xls,.csv,.tsv" onchange="importExcel(this)" class="hidden">
+            </label>
+            <span class="text-xs text-slate-500">usa la plantilla de participantes, o pega abajo</span>
+          </div>
           <div class="bg-slate-900 rounded-xl border border-slate-700 p-3 mb-3 text-xs font-mono text-slate-400 overflow-x-auto">
             <div class="text-slate-600 mb-1">Ejemplo:</div>
             <div>A00123&nbsp;&nbsp;&nbsp;Urteaga&nbsp;&nbsp;&nbsp;&nbsp;Mendoza&nbsp;&nbsp;&nbsp;Renan</div>
@@ -261,6 +297,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let editingId = null;   // uuid of list being edited, null = new
 let parsedList = [];    // current parsed participants
 let importMode = 'excel'; // 'excel' | 'canvas'
+let allLists = [];        // biblioteca completa (se filtra por curso/dictado en renderLibrary)
 
 // ── Helpers ───────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -317,6 +354,7 @@ function showCreateView(listData = null) {
   editingId = null;
   importMode = 'excel';
   switchImportMode('excel');
+  setClasif(listData);
 
   if (listData) {
     // editing existing list
@@ -340,9 +378,10 @@ async function loadLibrary() {
   hide('lib-empty');
   hide('lib-list');
 
+  // select('*') funciona con o sin las columnas nuevas de curso/dictado
   const { data, error } = await sb
     .from('participant_lists')
-    .select('id, nombre, lista, creado_en')
+    .select('*')
     .order('creado_en', { ascending: false });
 
   hide('lib-loading');
@@ -353,10 +392,24 @@ async function loadLibrary() {
     return;
   }
 
-  if (!data || data.length === 0) {
+  allLists = data || [];
+  renderLibrary();
+}
+
+function renderLibrary() {
+  const data = IPC.enabled
+    ? allLists.filter(l => IPC.matches(l, $('f-curso').value, $('f-dictado').value, ''))
+    : allLists;
+
+  if (data.length === 0) {
+    hide('lib-list');
     show('lib-empty');
+    $('lib-empty').querySelector('p').textContent = allLists.length
+      ? 'No hay listas con estos filtros'
+      : 'Aún no tienes listas guardadas';
     return;
   }
+  hide('lib-empty');
 
   const container = $('lib-list');
   container.innerHTML = '';
@@ -372,6 +425,7 @@ async function loadLibrary() {
       <div class="flex-1 min-w-0">
         <div class="font-semibold text-white truncate">${lst.nombre}</div>
         <div class="text-xs text-slate-500 mt-0.5">${count} participante${count !== 1 ? 's' : ''} · Creada ${fecha}</div>
+        ${IPC.badges(lst)}
       </div>
       <div class="flex items-center gap-2 flex-shrink-0">
         <button onclick="showResultsView('${lst.id}', '${lst.nombre.replace(/'/g,"\\'")}')"
@@ -623,6 +677,10 @@ async function saveList() {
   status.className = 'text-sm text-slate-400';
 
   const payload = { nombre, lista: parsedList };
+  if (IPC.enabled) {
+    payload.curso_id   = $('l-curso').value || null;
+    payload.dictado_id = payload.curso_id ? ($('l-dictado').value || null) : null;
+  }
   let error;
 
   if (editingId) {
@@ -914,7 +972,68 @@ function exportCanvasCSV() {
 }
 
 // ── Init ──────────────────────────────────────────────────────
-loadLibrary();
+// ── Cursos / dictados ─────────────────────────────────────────
+function setupCursoFilters() {
+  if (!IPC.enabled) return;
+  show('lib-filters');
+  IPC.fillCursos($('f-curso'), { first: 'Todos los cursos', sinCurso: true });
+  IPC.fillDictados($('f-dictado'), $('f-curso').value);
+  IPC.fillCursos($('l-curso'));
+  IPC.fillDictados($('l-dictado'), $('l-curso').value, { first: '— Sin dictado —' });
+}
+
+function onFilterCurso() {
+  IPC.fillDictados($('f-dictado'), $('f-curso').value);
+  renderLibrary();
+}
+
+// Una lista nueva hereda el curso/dictado del filtro activo.
+function setClasif(listData) {
+  if (!IPC.enabled) return;
+  show('clasif-panel');
+  const fc = $('f-curso').value;
+  const cursoId   = listData ? (listData.curso_id || '') : (fc && fc !== '__none' ? fc : '');
+  const dictadoId = listData ? (listData.dictado_id || '') : $('f-dictado').value;
+  $('l-curso').value = cursoId;
+  IPC.fillDictados($('l-dictado'), cursoId, { first: '— Sin dictado —' });
+  $('l-dictado').value = dictadoId;
+}
+
+async function reloadCursos() {
+  const c = $('l-curso').value, d = $('l-dictado').value;
+  await IPC.init();
+  setupCursoFilters();
+  $('l-curso').value = c;
+  IPC.fillDictados($('l-dictado'), c, { first: '— Sin dictado —' });
+  $('l-dictado').value = d;
+}
+
+// ── Importar plantilla de Excel ───────────────────────────────
+async function importExcel(input) {
+  const file = input.files[0];
+  input.value = '';
+  if (!file) return;
+  $('xls-label').textContent = 'Leyendo…';
+  try {
+    const tsv = await IPC.excelToTSV(file, ['Participantes']);
+    switchImportMode('excel');
+    $('list-input').value = tsv;
+    if (!$('list-name').value.trim()) {
+      $('list-name').value = file.name.replace(/\.(xlsx|xls|csv|tsv)$/i, '').replace(/[_]+/g, ' ').trim();
+    }
+    previewList();
+  } catch (err) {
+    alert('No se pudo leer el archivo: ' + (err.message || err));
+  } finally {
+    $('xls-label').textContent = 'Importar Excel';
+  }
+}
+
+(async () => {
+  await IPC.init();
+  setupCursoFilters();
+  loadLibrary();
+})();
 </script>
 </body>
 </html>
