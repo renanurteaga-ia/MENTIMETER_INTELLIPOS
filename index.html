@@ -3252,6 +3252,7 @@
                             <tbody>${filas}</tbody></table>` : '<p class="text-slate-500 italic text-sm">No hubo participantes registrados.</p>'}
                     </div>
                 </div>
+                ${IPP.questionTableHtml(sessionData.questions || [], sessionData.votes || {}, perfiles)}
                 <button onclick="downloadReportExcel()" class="w-full py-3 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg transition text-sm">
                     <i class="fa-solid fa-file-excel mr-2"></i>Descargar Reporte Excel
                 </button>
@@ -3270,6 +3271,7 @@
                     <p class="text-slate-400 text-sm">${IPP.esc(sessionData.name)}</p>
                 </div>
                 ${IPP.resultHtml(my ? my.perfil : null, sessionData.perfiles || [])}
+                ${IPP.reviewHtml(sessionData.questions || [], sessionData.participantVotes?.[participantId] || {}, sessionData.perfiles || [])}
                 <button onclick="printParticipantResult()" class="w-full py-3 bg-violet-700 hover:bg-violet-600 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
                     <i class="fa-solid fa-file-pdf"></i> Descargar mi resultado (PDF)
                 </button>
@@ -3306,6 +3308,16 @@
                 const o = (q.opciones || []).find(x => x.perfil === p.id);
                 return o ? (sessionData.votes[idx + '_' + o.key] || 0) : 0; })])];
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(preg), 'Respuestas por pregunta');
+        // Detalle: qué respondió cada participante en cada pregunta y a qué perfil corresponde
+        const detResp = [['Participante', 'N°', 'Pregunta', 'Respuesta elegida', 'Perfil']];
+        scores.forEach(s => {
+            const pv = (sessionData.participantVotes || {})[s.pid] || {};
+            qs.forEach((q, idx) => {
+                const o = (q.opciones || []).find(x => x.key === pv[String(idx)]);
+                detResp.push([s.nick, idx + 1, q.pregunta, o ? o.texto : '(sin respuesta)', o ? nombreP(o.perfil) : '']);
+            });
+        });
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detResp), 'Detalle de respuestas');
         const safe = (sessionData.name || 'perfiles').replace(/[^\w\- áéíóúñÁÉÍÓÚÑ]/g, '').trim() || 'perfiles';
         XLSX.writeFile(wb, `Perfiles - ${safe}.xlsx`);
     }
@@ -3712,7 +3724,7 @@
                 <div class="sesion-name">${IPP.esc(sesNombre)}</div>
                 <div class="participante">${IPP.esc(participanteLabel)}</div>
             </div>
-            ${IPP.printHtml(myScore ? myScore.perfil : null, sessionData.perfiles || [])}
+            ${IPP.printHtml(myScore ? myScore.perfil : null, sessionData.perfiles || [], sessionData.questions || [], sessionData.participantVotes?.[participantId] || {})}
             <div class="footer"><span>IntelliPOS Quiz · ${IPP.esc(sesNombre)}</span><span>${fecha}</span></div>
             <button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>`;
         } else if (hasPonderada) {
@@ -5172,7 +5184,9 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
             if (r.tipo === 'perfil') {
                 return `<div class="border-b border-slate-700/40 pb-2">
                     <p class="text-xs font-semibold text-slate-300 mb-0.5">${idx+1}. ${IPP.esc(r.pregunta || '')}</p>
-                    <p class="text-xs text-slate-400">${r.respuesta_texto ? IPP.esc(r.respuesta_texto) : '<span class="italic">Sin respuesta</span>'}</p>
+                    ${r.respuesta_texto
+                        ? `<div class="flex flex-wrap items-start gap-2"><p class="text-xs text-slate-400 flex-1 min-w-[12rem]">${IPP.esc(r.respuesta_texto)}</p>${r.perfil ? IPP.tag(sesData?.data?.perfiles || [], r.perfil) : ''}</div>`
+                        : '<p class="text-xs text-slate-500 italic">Sin respuesta</p>'}
                 </div>`;
             }
             if ((r.tipo || 'multiple_choice') === 'ponderada') {

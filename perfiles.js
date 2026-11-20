@@ -64,7 +64,11 @@ const IPP = {
         if (!(c[1] || '')) return;                                            // fila P sin nombre: se ignora
         const id = a.toUpperCase();
         if (perfiles.some(p => p.id === id)) { errores.push(`El perfil ${id} está definido dos veces.`); return; }
-        perfiles.push({ id, nombre: c[1], simbolo: c[2] || '', caracteristicas: c[3] || '', reto: c[4] || '' });
+        // Se quitan rótulos que la app ya muestra («Características: …», «Tu reto: …»)
+        const sinRotulo = (t, re) => String(t || '').replace(re, '').trim();
+        perfiles.push({ id, nombre: c[1], simbolo: c[2] || '',
+          caracteristicas: sinRotulo(c[3], /^\s*caracter[ií]sticas\s*:\s*/i),
+          reto: sinRotulo(c[4], /^\s*(tu\s+)?reto\s*:\s*/i) });
         return;
       }
       qLines.push({ c, fila: i + 1 });
@@ -75,13 +79,19 @@ const IPP = {
     if (perfiles.length > this.MAX_PERFILES) errores.push(`Se admiten hasta ${this.MAX_PERFILES} perfiles; hay ${perfiles.length}.`);
     const ids = perfiles.map(p => p.id);
 
+    const esCodigo = v => /^P[1-9]\d*$/i.test(v || '');
     qLines.forEach(({ c, fila }, n) => {
       const num = n + 1;
       const opciones = [];
-      for (let j = 2; j < c.length; j += 2) {
+      // Formato de la plantilla: B = URL de imagen y pares desde C.
+      // También se acepta el formato sin columna de imagen (pares desde B).
+      const inicio = esCodigo(c[1]) ? 1 : 2;
+      const imagen = inicio === 2 ? (c[1] || '') : '';
+      for (let j = inicio; j < c.length; j += 2) {
         const code = (c[j] || '').toUpperCase();
         const texto = c[j + 1] || '';
         if (!code && !texto) continue;
+        if (code === 'PERFIL' && !texto) continue;               // marca de tipo al final de la fila
         if (!code) { errores.push(`Pregunta ${num}: la respuesta «${texto.slice(0, 40)}» no indica su perfil.`); continue; }
         if (!texto) { errores.push(`Pregunta ${num}: el perfil ${code} no tiene texto de respuesta.`); continue; }
         if (!ids.includes(code)) { errores.push(`Pregunta ${num}: el perfil ${code} no está definido en la sección de perfiles.`); continue; }
@@ -91,19 +101,27 @@ const IPP = {
       const faltan = ids.filter(id => !opciones.some(o => o.perfil === id));
       if (faltan.length && perfiles.length >= 2) errores.push(`Pregunta ${num}: falta la respuesta del perfil ${faltan.join(', ')}.`);
       if (!opciones.length) return;
-      const q = { tipo: 'perfil', pregunta: c[0], imageUrl: this._driveUrl(c[1] || ''), opciones, correcta: null, puntaje: 1 };
+      // Orden aleatorio al crear el cuestionario: el orden guardado nunca es el del archivo.
+      this._mezclar(opciones, this.KEYS);
+      const q = { tipo: 'perfil', pregunta: c[0], imageUrl: this._driveUrl(imagen), opciones, correcta: null, puntaje: 1 };
       opciones.forEach(o => { q['opcion' + o.key] = o.texto; });
       preguntas.push(q);
     });
 
-    if (!preguntas.length) errores.push('No se encontraron preguntas debajo del encabezado «Pregunta».');
-    // Aviso de orden fijo: si todas las preguntas tienen los perfiles en el mismo orden
-    if (preguntas.length > 1) {
-      const orden = q => q.opciones.map(o => o.perfil).join(',');
-      if (preguntas.every(q => orden(q) === orden(preguntas[0])))
-        advertencias.push('Todas las preguntas tienen los perfiles en el mismo orden. La aplicación mezcla las respuestas al mostrarlas, pero conviene variar el orden también en el archivo.');
-    }
+    if (!preguntas.length) errores.push('No se encontraron preguntas.');
     return { perfiles, preguntas, errores, advertencias };
+  },
+
+  // Mezcla las opciones al azar (distinto del orden del archivo y del orden P1, P2, P3…) y reasigna las claves A, B, C…
+  _mezclar(opciones, keys) {
+    const orig = opciones.map(o => o.perfil).join(',');
+    for (let intento = 0; intento < 10; intento++) {
+      for (let i = opciones.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [opciones[i], opciones[j]] = [opciones[j], opciones[i]]; }
+      const ahora = opciones.map(o => o.perfil).join(',');
+      const natural = [...opciones].sort((x, y) => parseInt(x.perfil.slice(1)) - parseInt(y.perfil.slice(1))).map(o => o.perfil).join(',');
+      if (opciones.length < 2 || (ahora !== orig && ahora !== natural)) break;
+    }
+    opciones.forEach((o, i) => { o.key = keys[i]; });
   },
 
   // Reconstruye el texto (para editar un cuestionario guardado).
@@ -240,8 +258,42 @@ const IPP = {
       </div>`;
   },
 
+  // Etiqueta del perfil de una respuesta: «△ Controlador»
+  tag(perfiles, id) {
+    const p = this.info(perfiles, id);
+    return `<span class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-fuchsia-900/50 border border-fuchsia-700/50 text-fuchsia-200 whitespace-nowrap">${this.esc(p.simbolo)} ${this.esc(p.nombre)}</span>`;
+  },
+
+  // Revisión de las respuestas del participante con el perfil de cada una
+  reviewHtml(questions, pvotes, perfiles) {
+    const rows = (questions || []).map((q, idx) => {
+      if (q.tipo !== 'perfil') return '';
+      const opt = (q.opciones || []).find(o => o.key === (pvotes || {})[String(idx)]);
+      return `<div class="border-b border-slate-700/40 pb-2 space-y-1">
+        <p class="text-xs font-semibold text-slate-300">${idx + 1}. ${this.esc(q.pregunta)}</p>
+        ${opt ? `<div class="flex flex-wrap items-start gap-2"><p class="text-xs text-slate-400 flex-1 min-w-[12rem]">${this.esc(opt.texto)}</p>${this.tag(perfiles, opt.perfil)}</div>`
+              : '<p class="text-xs text-slate-500 italic">Sin respuesta</p>'}
+      </div>`;
+    }).join('');
+    return `<div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl space-y-3">
+      <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Tus respuestas y su perfil</p>${rows}</div>`;
+  },
+
+  // Tabla del presentador: cuántos participantes eligieron cada perfil en cada pregunta
+  questionTableHtml(questions, votes, perfiles) {
+    const e = this.esc.bind(this);
+    const head = (perfiles || []).map(p => `<th class="pb-2 px-2 font-semibold text-center whitespace-nowrap">${e(p.simbolo)} ${e(p.nombre)}</th>`).join('');
+    const body = (questions || []).map((q, idx) => q.tipo !== 'perfil' ? '' : `<tr class="border-t border-slate-700/40">
+        <td class="py-1.5 pr-2 text-xs text-slate-300">${idx + 1}. ${e(q.pregunta.length > 70 ? q.pregunta.slice(0, 70) + '…' : q.pregunta)}</td>
+        ${(perfiles || []).map(p => { const o = (q.opciones || []).find(x => x.perfil === p.id); return `<td class="py-1.5 px-2 text-xs text-center text-slate-200">${o ? ((votes || {})[idx + '_' + o.key] || 0) : 0}</td>`; }).join('')}
+      </tr>`).join('');
+    return `<div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl">
+      <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">Respuestas por pregunta y perfil</p>
+      <div class="overflow-x-auto"><table class="w-full min-w-[560px]"><thead><tr class="text-left text-xs text-slate-500"><th class="pb-2 pr-2 font-semibold">Pregunta</th>${head}</tr></thead><tbody>${body}</tbody></table></div></div>`;
+  },
+
   // ── Versión imprimible (PDF, fondo claro) ────────────────────────────────
-  printHtml(r, perfiles) {
+  printHtml(r, perfiles, questions, pvotes) {
     const e = this.esc.bind(this);
     if (!r || !r.dominante) return '<div class="msg-box">No se registraron respuestas para calcular tu perfil.</div>';
     const nivel = (titulo, g) => !g ? '' : `
@@ -258,6 +310,13 @@ const IPP = {
       <div class="section-title">Respuestas por perfil</div>
       <table><thead><tr><th>Perfil</th><th style="width:90px;text-align:center">Respuestas</th></tr></thead><tbody>
         ${(perfiles || []).map(p => `<tr><td>${e(p.simbolo)} ${e(p.nombre)}</td><td class="pts-cell">${r.conteo[p.id] || 0}</td></tr>`).join('')}
-      </tbody></table>`;
+      </tbody></table>
+      ${questions ? `<div class="section-title">Tus respuestas y su perfil</div>
+      <table><thead><tr><th style="width:42%">Pregunta</th><th>Tu respuesta</th><th style="width:120px">Perfil</th></tr></thead><tbody>
+        ${questions.map((q, idx) => { if (q.tipo !== 'perfil') return '';
+          const o = (q.opciones || []).find(x => x.key === (pvotes || {})[String(idx)]);
+          const p = o ? this.info(perfiles, o.perfil) : null;
+          return `<tr><td>${idx + 1}. ${e(q.pregunta)}</td><td>${o ? e(o.texto) : '—'}</td><td>${p ? e(p.simbolo) + ' ' + e(p.nombre) : '—'}</td></tr>`; }).join('')}
+      </tbody></table>` : ''}`;
   }
 };
