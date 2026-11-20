@@ -11,6 +11,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="/cursos-common.js"></script>
+    <script src="/perfiles.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
     <style>
@@ -1261,6 +1262,14 @@
     }
 
     function parseSheetText(raw) {
+        // ── Cuestionario de PERFILES (Plantilla 5): formato propio, ver perfiles.js
+        parsedPerfiles = []; perfilErrores = [];
+        if (IPP.detect(raw)) {
+            const r = IPP.parse(raw);
+            parsedPerfiles = r.perfiles; perfilErrores = r.errores;
+            parsedRangos = []; parsedRangosDim = {};
+            return r.preguntas;
+        }
         const lines = raw.split(/\r\n|\n/).filter(l => l.trim());
         const parsed    = [];
         const rangos    = [];
@@ -1369,6 +1378,8 @@
     let parsedQuestions = [];
     let parsedRangos    = [];   // rangos diagnósticos para cuestionarios PONDERADA
     let parsedRangosDim = {};   // rangos por dimensión para NIVEL-RANGO: { dimN: [{min,max,nombre,diagnostico}] }
+    var parsedPerfiles  = [];   // perfiles para cuestionarios PERFIL: [{ id, nombre, simbolo, caracteristicas, reto }]
+    var perfilErrores   = [];   // errores de la plantilla de perfiles
 
     // ── Biblioteca ────────────────────────────────────────────────────────────
     async function refreshLibrarySelector() {
@@ -1481,8 +1492,9 @@
         parsedQuestions = normalizarPreguntas(JSON.parse(opt.dataset.preguntas));
         const allRangos = JSON.parse(opt.dataset.rangos || '[]');
         const dimEntry  = allRangos.find(r => r._dim === true);
-        parsedRangos    = allRangos.filter(r => r._dim !== true);
+        parsedRangos    = allRangos.filter(r => r._dim !== true && r._perfil !== true);
         parsedRangosDim = dimEntry ? dimEntry.data : {};
+        parsedPerfiles  = IPP.fromRangos(allRangos);
         $('library-loaded-name').textContent = opt.textContent.split('(')[0].trim();
         $('library-loaded-count').textContent = parsedQuestions.length;
         $('library-loaded-msg').classList.remove('hidden');
@@ -1545,6 +1557,7 @@
             if (q.tipo === 'abierta')     return q;                              // ya correcto
             if (q.tipo === 'ponderada')   return q;                              // ya correcto
             if (q.tipo === 'nivel_rango') return q;                              // ya correcto
+            if (q.tipo === 'perfil')      return q;                              // ya correcto
             // Si tiene campo 'dimension' es nivel_rango aunque falte el campo 'tipo'
             if (q.dimension !== undefined && q.dimension !== null && q.dimension !== '')
                 return { ...q, tipo: 'nivel_rango' };
@@ -1616,6 +1629,7 @@
 
     function clearLibrarySelection() {
         parsedQuestions = [];
+        parsedPerfiles  = [];
         $('library-select').value = '';
         $('library-loaded-msg').classList.add('hidden');
         // Restaurar botón
@@ -1631,6 +1645,7 @@
         const raw = $('sheet-text-input').value;
         if (!raw.trim()) { alert('Por favor pega el contenido de tus celdas de Google Sheets.'); return; }
         parsedQuestions = parseSheetText(raw);
+        if (perfilErrores.length) { alert('El cuestionario de perfiles tiene errores:\n\n• ' + perfilErrores.slice(0, 12).join('\n• ') + '\n\nCorrígelos y vuelve a pegarlo.'); parsedQuestions = []; return; }
         if (!parsedQuestions.length) { alert('No se pudieron interpretar las preguntas. Verifica el formato.'); return; }
         renderImageUploadPanel();
         $('image-upload-panel').classList.remove('hidden');
@@ -1719,6 +1734,7 @@
             accessType, examType, sesionDefault, topicoDefault,
             rangos: parsedRangos,
             rangosDim: parsedRangosDim,
+            perfiles: parsedPerfiles,
             participantList: selectedParticipantList ? selectedParticipantList.lista : null,
             questionChangedAt:0, examStartedAt:0
         };
@@ -1766,7 +1782,7 @@
             : questions;
 
         // Estado inicial: 'lobby' — los participantes se registran antes de empezar
-        sessionData = { questions: questionsParaUsar, currentIndex:0, votes:{}, voters:{}, participants:{}, participantVotes:{}, examSubmissions:{}, reveal:false, status:'lobby', mode, timerSeconds, examMinutes, randomOrder, name, accessType, examType, sesionDefault, topicoDefault, rangos: parsedRangos, rangosDim: parsedRangosDim, participantList: selectedParticipantList ? selectedParticipantList.lista : null, questionChangedAt:0, examStartedAt:0 };
+        sessionData = { questions: questionsParaUsar, currentIndex:0, votes:{}, voters:{}, participants:{}, participantVotes:{}, examSubmissions:{}, reveal:false, status:'lobby', mode, timerSeconds, examMinutes, randomOrder, name, accessType, examType, sesionDefault, topicoDefault, rangos: parsedRangos, rangosDim: parsedRangosDim, perfiles: parsedPerfiles, participantList: selectedParticipantList ? selectedParticipantList.lista : null, questionChangedAt:0, examStartedAt:0 };
 
         try {
             const { error } = await sb.from('quiz_session').insert([{ id: cloudId, data: sessionData }]);
@@ -1873,7 +1889,32 @@
         const esPonderada   = tipoQ === 'ponderada';
         const esNivelPres   = tipoQ === 'nivel_rango';
 
-        if (esNivelPres) {
+        if (tipoQ === 'perfil') {
+            // ── Perfil: respuestas sin indicar el perfil (la pantalla puede estar proyectada)
+            const chartWrap = $('resultsChart');
+            if (chartWrap) chartWrap.parentElement.parentElement.classList.add('hidden');
+            const totalPart  = Object.keys(sessionData.participants || {}).length;
+            const respondido = ((sessionData.voters || {})[String(sessionData.currentIndex)] || []).length;
+            const pct        = totalPart > 0 ? Math.round(respondido / totalPart * 100) : 0;
+            const opts       = q.opciones || [];
+            const tot        = opts.reduce((a, o) => a + (sessionData.votes[sessionData.currentIndex+'_'+o.key] || 0), 0);
+            $('presenter-options-grid').innerHTML = `
+                <div class="lg:col-span-2 p-5 bg-slate-800 rounded-2xl border border-fuchsia-700/50 shadow-xl space-y-3">
+                    <div class="flex items-center justify-between">
+                        <p class="text-xs font-semibold text-fuchsia-300 uppercase tracking-wider"><i class="fa-solid fa-masks-theater mr-1"></i>Cuestionario de perfiles</p>
+                        <p class="text-xs text-slate-400">${respondido}/${totalPart} respondieron (${pct}%)</p>
+                    </div>
+                    ${opts.map(o => {
+                        const c  = sessionData.votes[sessionData.currentIndex+'_'+o.key] || 0;
+                        const pc = tot > 0 ? Math.round(c / tot * 100) : 0;
+                        return `<div>
+                            <div class="flex justify-between text-sm mb-1 gap-2"><span class="text-slate-200">${IPP.esc(o.texto)}</span><span class="text-xs text-slate-400 shrink-0">${c} (${pc}%)</span></div>
+                            <div class="h-1.5 bg-slate-700 rounded-full overflow-hidden"><div class="h-full rounded-full bg-fuchsia-500 transition-all duration-500" style="width:${pc}%"></div></div>
+                        </div>`;
+                    }).join('')}
+                </div>`;
+
+        } else if (esNivelPres) {
             // ── Nivel-Rango: mostrar distribución de niveles 1-5 ──────────────
             const chartWrap = $('resultsChart');
             if (chartWrap) chartWrap.parentElement.parentElement.classList.add('hidden');
@@ -2037,6 +2078,9 @@
             btn.className = 'shrink-0 px-3 py-1.5 bg-amber-600/30 hover:bg-amber-600/50 text-amber-300 border border-amber-600/50 rounded-xl text-xs font-semibold transition whitespace-nowrap';
             btn.innerHTML = '<i class="fa-solid fa-eye mr-1"></i>Ver Respuesta';
         }
+        // En cuestionarios de perfiles no hay respuesta que revelar
+        const qAct = (sessionData.questions || [])[sessionData.currentIndex];
+        btn.classList.toggle('hidden', !!qAct && qAct.tipo === 'perfil');
     }
 
     async function toggleReveal() {
@@ -2101,9 +2145,10 @@
         const hasNivelRango = questions.some(q => q.tipo === 'nivel_rango');
         const pondQuestions = questions.filter(q => q.tipo === 'ponderada');
         const rangosDim     = sessionData.rangosDim || {};
+        const hasPerfilQ    = questions.some(q => q.tipo === 'perfil');
 
-        // Puntaje posible: solo preguntas MC (no abiertas, no ponderadas, no nivel_rango)
-        const puntajePosible = (hasPonderada || hasNivelRango) ? 0 : questions.reduce((s, q) =>
+        // Puntaje posible: solo preguntas MC (no abiertas, no ponderadas, no nivel_rango, no perfil)
+        const puntajePosible = (hasPonderada || hasNivelRango || hasPerfilQ) ? 0 : questions.reduce((s, q) =>
             (q.tipo || 'multiple_choice') === 'multiple_choice' ? s + (q.puntaje || 1) : s, 0);
 
         const rows = Object.entries(participants).map(([pid, nick]) => {
@@ -2140,6 +2185,21 @@
                         pregunta:          q.pregunta || '',
                         respuesta_texto:   respuestaDada ? (q['opcion' + respuestaDada] || '') : '',
                         alternativa_texto: pondBestKey(q) ? (q['opcion' + pondBestKey(q)] || '') : ''
+                    };
+                }
+
+                if (tipo === 'perfil') {
+                    const opt = (q.opciones || []).find(o => o.key === respuestaDada) || null;
+                    return {
+                        question_id:      q.id || null,
+                        tipo:             'perfil',
+                        respuesta_dada:   respuestaDada,
+                        perfil:           opt ? opt.perfil : null,
+                        respuesta_texto:  opt ? opt.texto : '',
+                        pregunta:         q.pregunta || '',
+                        correcta:         null,
+                        puntaje_obtenido: 0,
+                        puntaje_maximo:   0
                     };
                 }
 
@@ -2196,10 +2256,12 @@
 
             // Para ponderada: puntaje_total y rango; para MC: nota 0-20
             let nota = null, puntaje_total = null, rango_obtenido = null;
-            if (hasPonderada) {
+            if (hasPerfilQ) {
+                rango_obtenido = IPP.toResult(IPP.score(questions, pvotes, sessionData.perfiles || []), sessionData.perfiles || []);
+            } else if (hasPonderada) {
                 puntaje_total  = puntajeObtenido;
                 rango_obtenido = rangos.find(r => puntaje_total >= r.min && puntaje_total <= r.max) || null;
-            } else if (!hasNivelRango) {
+            } else if (!hasNivelRango && !hasPerfilQ) {
                 nota = puntajePosible > 0
                     ? Math.round((puntajeObtenido / puntajePosible) * 20 * 10) / 10
                     : null;
@@ -2258,10 +2320,17 @@
         const mcQuestions   = questions.filter(q => (q.tipo || 'multiple_choice') === 'multiple_choice');
         const totalMC       = mcQuestions.length;
 
+        const hasPerfil = questions.some(q => q.tipo === 'perfil');
+        const perfilesDef = sessionData.perfiles || [];
+
         const scores = Object.entries(participants).map(([pid, nick]) => {
             const pvotes = participantVotes[pid] || {};
 
-            if (hasPonderada) {
+            if (hasPerfil) {
+                // ── Perfiles: dominante y secundario (mixtos si hay empate) ────
+                const perfil = IPP.score(questions, pvotes, perfilesDef);
+                return { pid, nick, perfil, nota: null, correct: null, total: null, puntaje_total: null, rango: null };
+            } else if (hasPonderada) {
                 // ── Ponderada: suma de pesos por respuesta ────────────────────
                 let puntaje_total = 0;
                 pondQuestions.forEach(q => {
@@ -2302,7 +2371,10 @@
             }
         });
 
-        if (hasPonderada) {
+        if (hasPerfil) {
+            scores.sort((a, b) => String(a.nick).localeCompare(String(b.nick), 'es'));
+            return { scores, avg: null, hasPonderada: false, hasPerfil: true };
+        } else if (hasPonderada) {
             scores.sort((a, b) => (b.puntaje_total ?? 0) - (a.puntaje_total ?? 0));
             return { scores, avg: null, hasPonderada: true };
         } else if (hasNivelRango) {
@@ -2450,7 +2522,20 @@
         const esNivel   = (q.tipo || 'multiple_choice') === 'nivel_rango';
         const selected  = examAnswers[origIdx];
 
-        if (esAbierta) {
+        if (q.tipo === 'perfil') {
+            // Respuestas en orden aleatorio por participante, sin letras ni perfil
+            if (examPtsBadge) examPtsBadge.textContent = '';
+            $('exam-options-container').innerHTML = IPP.shuffledOptions(q, participantId, origIdx).map(o => {
+                const isSel = selected === o.key;
+                return `
+                <button onclick="selectExamOption('${o.key}')"
+                    class="w-full p-3.5 rounded-xl text-left font-semibold text-sm transition border ${
+                        isSel ? 'bg-fuchsia-600 border-fuchsia-400 text-white shadow-lg shadow-fuchsia-500/20'
+                              : 'bg-slate-700/60 border-slate-600 text-slate-200 hover:bg-slate-600 hover:border-slate-500'}">
+                    ${IPP.esc(o.texto)}
+                </button>`;
+            }).join('');
+        } else if (esAbierta) {
             // Textarea para pregunta abierta
             $('exam-options-container').innerHTML = `
                 <div>
@@ -2498,12 +2583,6 @@
                 </button>`;
             }).join('');
         }
-
-        // DEBUG TEMPORAL — aparece DESPUÉS del branch, así no se sobreescribe
-        const dbg = document.createElement('p');
-        dbg.style.cssText = 'color:#facc15;font-size:10px;margin-top:6px;opacity:0.8';
-        dbg.textContent = `[DBG] tipo="${q.tipo||'?'}" dim="${q.dimension||'-'}" opA="${q.opcionA===undefined?'undef':q.opcionA||'empty'}" esNivel=${esNivel} esAb=${esAbierta}`;
-        $('exam-options-container').appendChild(dbg);
 
         // Actualizar indicadores de puntos
         $('exam-dot-nav').innerHTML = examOrder.map((oi, pos) => {
@@ -3113,6 +3192,124 @@
         };
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  CUESTIONARIO DE PERFILES — pantallas finales y reporte
+    // ═══════════════════════════════════════════════════════════════════════════
+    function renderPerfPresenter() {
+        const { scores } = calculateScores();
+        const perfiles  = sessionData.perfiles || [];
+        const conDatos  = scores.filter(s => s.perfil && s.perfil.dominante);
+        const nMixto    = conDatos.filter(s => s.perfil.dominante.mixto).length;
+        const dist      = perfiles.map(p => ({ p, n: conDatos.filter(s => !s.perfil.dominante.mixto && s.perfil.dominante.perfiles[0] === p.id).length }));
+        const maxN      = Math.max(1, nMixto, ...dist.map(d => d.n));
+        const bar = (label, n, color) => `
+            <div>
+                <div class="flex justify-between text-sm mb-1"><span class="text-slate-200">${label}</span><span class="text-slate-400">${n} participante${n !== 1 ? 's' : ''}</span></div>
+                <div class="h-2.5 bg-slate-700 rounded-full overflow-hidden"><div class="h-full rounded-full ${color}" style="width:${Math.round(n / maxN * 100)}%"></div></div>
+            </div>`;
+        const grp = g => !g ? '<span class="text-slate-500">—</span>'
+            : `${g.mixto ? '<span class="text-xs px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-300 mr-1">Mixto</span>' : ''}${IPP.esc(g.perfiles.map(id => { const p = IPP.info(perfiles, id); return (p.simbolo ? p.simbolo + ' ' : '') + p.nombre; }).join(' + '))} <span class="text-slate-500">(${g.respuestas})</span>`;
+        const filas = scores.map(s => `
+            <tr class="border-b border-slate-700/50 align-top">
+                <td class="py-2 pr-3 text-sm font-medium text-white">${IPP.esc(s.nick)}</td>
+                <td class="py-2 pr-3 text-sm text-indigo-200">${grp(s.perfil.dominante)}</td>
+                <td class="py-2 pr-3 text-sm text-teal-200">${grp(s.perfil.secundario)}</td>
+                <td class="py-2 text-xs text-slate-400 whitespace-nowrap">${perfiles.map(p => `${IPP.esc(p.simbolo || p.id)} ${s.perfil.conteo[p.id] || 0}`).join(' · ')}</td>
+            </tr>`).join('');
+
+        $('ended-content').innerHTML = `
+            <div class="space-y-6 w-full fade-in">
+                <div class="text-center space-y-1">
+                    <div class="text-4xl">🎭</div>
+                    <h2 class="text-2xl font-extrabold text-white">Resultados · Cuestionario de perfiles</h2>
+                    <p class="text-slate-400 text-sm">${IPP.esc(sessionData.name)}</p>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 text-center">
+                        <p class="text-3xl font-extrabold text-indigo-400">${scores.length}</p><p class="text-xs text-slate-400 mt-1">Participantes</p>
+                    </div>
+                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 text-center">
+                        <p class="text-3xl font-extrabold text-amber-400">${nMixto}</p><p class="text-xs text-slate-400 mt-1">Con perfil dominante mixto</p>
+                    </div>
+                </div>
+                <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl space-y-3">
+                    <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Perfil dominante del grupo</p>
+                    ${dist.map(d => bar(`${IPP.esc(d.p.simbolo)} ${IPP.esc(d.p.nombre)}`, d.n, 'bg-fuchsia-500')).join('')}
+                    ${bar('Mixto (empate)', nMixto, 'bg-amber-500')}
+                </div>
+                <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 shadow-xl">
+                    <div class="flex items-center justify-between mb-3 gap-3 flex-wrap">
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Perfil de cada participante</p>
+                        <label class="flex items-center space-x-2 cursor-pointer text-xs text-slate-400">
+                            <input type="checkbox" checked onchange="document.getElementById('perf-table').classList.toggle('hidden', !this.checked)" class="accent-indigo-500 w-3.5 h-3.5">
+                            <span>Mostrar (pantalla proyectada)</span>
+                        </label>
+                    </div>
+                    <div id="perf-table" class="overflow-x-auto">
+                        ${scores.length ? `<table class="w-full min-w-[560px]"><thead><tr class="text-left text-xs text-slate-500">
+                            <th class="pb-2 pr-3 font-semibold">Participante</th><th class="pb-2 pr-3 font-semibold">Dominante</th>
+                            <th class="pb-2 pr-3 font-semibold">Secundario</th><th class="pb-2 font-semibold">Respuestas por perfil</th></tr></thead>
+                            <tbody>${filas}</tbody></table>` : '<p class="text-slate-500 italic text-sm">No hubo participantes registrados.</p>'}
+                    </div>
+                </div>
+                <button onclick="downloadReportExcel()" class="w-full py-3 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg transition text-sm">
+                    <i class="fa-solid fa-file-excel mr-2"></i>Descargar Reporte Excel
+                </button>
+                <button onclick="resetApp()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">Volver al inicio</button>
+            </div>`;
+    }
+
+    function renderPerfParticipant() {
+        const { scores } = calculateScores();
+        const my = scores.find(s => s.pid === participantId);
+        $('ended-content').innerHTML = `
+            <div class="space-y-5 w-full max-w-md mx-auto fade-in">
+                <div class="text-center space-y-1">
+                    <div class="text-4xl">🎭</div>
+                    <h2 class="text-2xl font-extrabold text-white">Tu perfil</h2>
+                    <p class="text-slate-400 text-sm">${IPP.esc(sessionData.name)}</p>
+                </div>
+                ${IPP.resultHtml(my ? my.perfil : null, sessionData.perfiles || [])}
+                <button onclick="printParticipantResult()" class="w-full py-3 bg-violet-700 hover:bg-violet-600 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-file-pdf"></i> Descargar mi resultado (PDF)
+                </button>
+                <button onclick="resetApp()" class="w-full py-3 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm font-semibold transition">Volver al inicio</button>
+            </div>`;
+    }
+
+    function downloadPerfExcel() {
+        const { scores } = calculateScores();
+        const perfiles = sessionData.perfiles || [];
+        const qs = sessionData.questions || [];
+        const nombreP = id => { const p = IPP.info(perfiles, id); return p.nombre; };
+        const grpTxt = g => g ? `${g.mixto ? 'Mixto: ' : ''}${g.perfiles.map(nombreP).join(' + ')}` : '—';
+        const wb = XLSX.utils.book_new();
+        const conDatos = scores.filter(s => s.perfil.dominante);
+        const resumen = [
+            ['REPORTE · CUESTIONARIO DE PERFILES'], ['Sesión', sessionData.name || ''], ['Fecha', new Date().toLocaleString('es-PE')],
+            ['Participantes', scores.length], ['Preguntas', qs.length], [],
+            ['PERFIL DOMINANTE DEL GRUPO'], ['Perfil', 'Símbolo', 'Participantes', '%'],
+            ...perfiles.map(p => { const n = conDatos.filter(s => !s.perfil.dominante.mixto && s.perfil.dominante.perfiles[0] === p.id).length;
+                return [p.nombre, p.simbolo, n, conDatos.length ? Math.round(n / conDatos.length * 100) + '%' : '0%']; }),
+            (() => { const n = conDatos.filter(s => s.perfil.dominante.mixto).length; return ['Mixto (empate)', '', n, conDatos.length ? Math.round(n / conDatos.length * 100) + '%' : '0%']; })(),
+            [], ['PERFILES DEFINIDOS'], ['Código', 'Nombre', 'Símbolo', 'Características', 'Reto'],
+            ...perfiles.map(p => [p.id, p.nombre, p.simbolo, p.caracteristicas, p.reto])
+        ];
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumen), 'Resumen');
+        const det = [['Participante', 'Perfil dominante', 'Resp. dominante', 'Perfil secundario', 'Resp. secundario', 'Respondidas', ...perfiles.map(p => p.nombre)],
+            ...scores.map(s => [s.nick, grpTxt(s.perfil.dominante), s.perfil.dominante ? s.perfil.dominante.respuestas : 0,
+                grpTxt(s.perfil.secundario), s.perfil.secundario ? s.perfil.secundario.respuestas : '', s.perfil.respondidas,
+                ...perfiles.map(p => s.perfil.conteo[p.id] || 0)])];
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(det), 'Participantes');
+        const preg = [['N°', 'Pregunta', ...perfiles.map(p => p.nombre)],
+            ...qs.map((q, idx) => [idx + 1, q.pregunta, ...perfiles.map(p => {
+                const o = (q.opciones || []).find(x => x.perfil === p.id);
+                return o ? (sessionData.votes[idx + '_' + o.key] || 0) : 0; })])];
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(preg), 'Respuestas por pregunta');
+        const safe = (sessionData.name || 'perfiles').replace(/[^\w\- áéíóúñÁÉÍÓÚÑ]/g, '').trim() || 'perfiles';
+        XLSX.writeFile(wb, `Perfiles - ${safe}.xlsx`);
+    }
+
     function renderEndPresenter() {
         showView('view-ended');
         const { scores, avg, hasPonderada } = calculateScores();
@@ -3122,6 +3319,7 @@
 
         // ── Sesión PONDERADA (autodiagnóstico): estadísticas propias ─────────
         if (hasPonderada) { renderPondPresenter(); return; }
+        if (sessionData.questions.some(q => q.tipo === 'perfil')) { renderPerfPresenter(); return; }
 
         const rows = scores.map((s, i) => {
             const medal    = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
@@ -3254,6 +3452,7 @@
 
         // ── Sesión PONDERADA (autodiagnóstico) ────────────────────────────────
         if (hasPonderada) { renderPondParticipant(); return; }
+        if (sessionData.questions.some(q => q.tipo === 'perfil')) { renderPerfParticipant(); return; }
 
         let msg = '', msgColor = '';
         if (!myScore) {
@@ -3506,7 +3705,17 @@
 
         let bodyHTML = '';
 
-        if (hasPonderada) {
+        if (sessionData.questions.some(q => q.tipo === 'perfil')) {
+            bodyHTML = `
+            <div class="header">
+                <div class="brand">IntelliPOS Quiz · Cuestionario de perfiles</div>
+                <div class="sesion-name">${IPP.esc(sesNombre)}</div>
+                <div class="participante">${IPP.esc(participanteLabel)}</div>
+            </div>
+            ${IPP.printHtml(myScore ? myScore.perfil : null, sessionData.perfiles || [])}
+            <div class="footer"><span>IntelliPOS Quiz · ${IPP.esc(sesNombre)}</span><span>${fecha}</span></div>
+            <button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>`;
+        } else if (hasPonderada) {
             bodyHTML = pondPrintBody(sesNombre, participanteLabel, fecha);
         } else {
             // ── MC ──────────────────────────────────────────────────────────
@@ -4110,7 +4319,25 @@
         const esPond    = tipoQ === 'ponderada';
         const esNivel   = tipoQ === 'nivel_rango';
 
-        if (esAbierta) {
+        if (tipoQ === 'perfil') {
+            // ── Perfil: respuestas en orden aleatorio por participante, sin letras
+            $('vote-results').classList.add('hidden');
+            if (pBadge) pBadge.classList.add('hidden');
+            if (votedOption) {
+                container.innerHTML = `
+                    <div class="p-5 bg-slate-800 rounded-2xl border border-fuchsia-700/50 shadow-xl text-center fade-in">
+                        <p class="text-fuchsia-300 font-bold">✅ Respuesta registrada</p>
+                        <p class="text-xs text-slate-400 mt-1">Esperando a que el presentador avance.</p>
+                    </div>`;
+            } else {
+                container.innerHTML = IPP.shuffledOptions(q, participantId, sessionData.currentIndex).map(o => `
+                    <button onclick="submitVote('${o.key}')"
+                        class="w-full p-4 bg-fuchsia-700 hover:bg-fuchsia-600 active:scale-95 rounded-xl font-bold text-white shadow-lg transition text-left flex items-center justify-between gap-3 fade-in">
+                        <span>${IPP.esc(o.texto)}</span>
+                        <i class="fa-solid fa-chevron-right text-xs opacity-60"></i>
+                    </button>`).join('');
+            }
+        } else if (esAbierta) {
             // ── Pregunta abierta ──────────────────────────────────────────────
             $('vote-results').classList.add('hidden');
             const openKey       = `open_${cloudId}_${sessionData.currentIndex}`;
@@ -4246,7 +4473,7 @@
                 <p class="text-slate-400 text-sm text-center py-2">Pregunta abierta — las respuestas serán calificadas por el presentador.</p>`;
             return;
         }
-        if (tipoQ === 'nivel_rango') {
+        if (tipoQ === 'nivel_rango' || tipoQ === 'perfil') {
             $('vote-results-bars').innerHTML = '';
             return;
         }
@@ -4936,11 +5163,18 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
         const nota               = data.nota;
         const esPonderada        = respuestas.length > 0 && respuestas.some(r => r.tipo === 'ponderada');
         const esNivelRango       = respuestas.length > 0 && respuestas.some(r => r.tipo === 'nivel_rango');
+        const esPerfil           = respuestas.length > 0 && respuestas.some(r => r.tipo === 'perfil');
         const puntajeTotal       = data.puntaje_total;
         const rangoObtenido      = data.rango_obtenido;
         const rangosDimObtenidos = data.rangos_dim_obtenidos || null;
 
         const respHtml = respuestas.map((r, idx) => {
+            if (r.tipo === 'perfil') {
+                return `<div class="border-b border-slate-700/40 pb-2">
+                    <p class="text-xs font-semibold text-slate-300 mb-0.5">${idx+1}. ${IPP.esc(r.pregunta || '')}</p>
+                    <p class="text-xs text-slate-400">${r.respuesta_texto ? IPP.esc(r.respuesta_texto) : '<span class="italic">Sin respuesta</span>'}</p>
+                </div>`;
+            }
             if ((r.tipo || 'multiple_choice') === 'ponderada') {
                 return `<div class="border-b border-slate-700/40 pb-2">
                     <p class="text-xs font-semibold text-slate-300 mb-0.5">📊 Pregunta ${idx+1}</p>
@@ -4985,7 +5219,9 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
         // ── Bloque de resultado principal (varía según tipo) ──────────────────
         let resultadoHtml = '';
         let pondBoleta = null;
-        if (esNivelRango && rangosDimObtenidos) {
+        if (esPerfil) {
+            resultadoHtml = IPP.resultHtml(rangoObtenido, sesData?.data?.perfiles || []);
+        } else if (esNivelRango && rangosDimObtenidos) {
             // ── NIVEL-RANGO: un diagnóstico por dimensión ──────────────────────
             const dimsHtml = Object.entries(rangosDimObtenidos).map(([d, info]) => {
                 const rango    = info.rango;
@@ -5034,7 +5270,7 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
 
         $('boleta-content').innerHTML = `
             <div class="text-center space-y-1 pb-2">
-                <div class="text-4xl">${esNivelRango ? '🔢' : esPonderada ? '📊' : '📋'}</div>
+                <div class="text-4xl">${esPerfil ? '🎭' : esNivelRango ? '🔢' : esPonderada ? '📊' : '📋'}</div>
                 <h2 class="text-xl font-extrabold text-white">${sesName}</h2>
                 <p class="text-xs font-semibold text-indigo-400 uppercase tracking-wider">${tipoPrueba}</p>
                 <p class="text-xs text-slate-400">${data.participante_identificador}</p>
@@ -5062,6 +5298,7 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
         }
         // v3.0: el autodiagnóstico ponderado tiene su propio reporte (sin notas ni aprobados)
         if ((sessionData.questions || []).some(q => q.tipo === 'ponderada')) { downloadPondExcel(); return; }
+        if ((sessionData.questions || []).some(q => q.tipo === 'perfil'))    { downloadPerfExcel(); return; }
 
         // v3.3: leer SIEMPRE los resultados actuales de Supabase. Antes reutilizaba la copia
         // cargada al entrar a calificar, que no incluía las notas guardadas después.
@@ -5272,9 +5509,19 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
             const nombre  = quizNombres[ses.quiz_id] || 'Cuestionario';
             const fecha   = new Date(ses.fecha).toLocaleDateString('es', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
             const esPonderada = ses.participantes.some(p => p.puntaje_total !== null && p.puntaje_total !== undefined);
+            const esPerfilH   = ses.participantes.some(p => p.rango_obtenido && p.rango_obtenido.tipo === 'perfil');
 
             // Filas de participantes
             const filasHTML = ses.participantes.map(p => {
+                if (esPerfilH) {
+                    const r = p.rango_obtenido || {};
+                    const sec = r.secundario ? `${r.secundario.mixto ? 'Mixto ' : ''}${r.secundario.perfiles.join(' + ')} (${r.secundario.respuestas})` : '—';
+                    return `<tr class="border-t border-slate-700/50">
+                        <td class="py-2 px-3 text-sm text-white">${p.participante_identificador || p.participante_codigo}</td>
+                        <td class="py-2 px-3 text-sm text-center font-bold text-fuchsia-300">${IPP.esc(r.nombre || '—')}${r.dominante ? ` (${r.dominante.respuestas})` : ''}</td>
+                        <td class="py-2 px-3 text-xs text-slate-300">${IPP.esc(sec)}</td>
+                    </tr>`;
+                }
                 if (esPonderada) {
                     const rango = p.rango_obtenido;
                     return `<tr class="border-t border-slate-700/50">
@@ -5293,8 +5540,8 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
                 }
             }).join('');
 
-            const colHead2 = esPonderada ? 'Puntaje' : 'Nota';
-            const colHead3 = esPonderada ? 'Rango' : 'Puntaje';
+            const colHead2 = esPerfilH ? 'Perfil dominante' : esPonderada ? 'Puntaje' : 'Nota';
+            const colHead3 = esPerfilH ? 'Secundario' : esPonderada ? 'Rango' : 'Puntaje';
 
             return `
             <div class="bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden">
@@ -5303,7 +5550,7 @@ Responde SOLO en formato JSON exacto: {"puntaje_min": <número>, "puntaje_max": 
                     <div>
                         <p class="font-bold text-white text-sm">${nombre}</p>
                         <p class="text-xs text-slate-500 mt-0.5">${fecha} · ${nPartic} participante${nPartic !== 1 ? 's' : ''}
-                            ${esPonderada ? '<span class="ml-2 px-1.5 py-0.5 bg-violet-900/50 text-violet-300 rounded text-xs">PONDERADA</span>' : ''}
+                            ${esPerfilH ? '<span class="ml-2 px-1.5 py-0.5 bg-fuchsia-900/50 text-fuchsia-300 rounded text-xs">PERFILES</span>' : esPonderada ? '<span class="ml-2 px-1.5 py-0.5 bg-violet-900/50 text-violet-300 rounded text-xs">PONDERADA</span>' : ''}
                         </p>
                     </div>
                     <i id="hses-ico-${idx}" class="fa-solid fa-chevron-down text-slate-500 transition-transform"></i>
