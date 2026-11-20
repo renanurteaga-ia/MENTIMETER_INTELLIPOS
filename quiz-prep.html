@@ -9,6 +9,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="/cursos-common.js"></script>
+<script src="/perfiles.js"></script>
 <style>
   body { background: #0f172a; font-family: system-ui, sans-serif; }
   .glass { background: rgba(30,41,59,0.85); backdrop-filter: blur(12px); }
@@ -216,6 +217,9 @@ const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 let parsedQuestions = [];
 let parsedRangos    = [];   // rangos diagnósticos para cuestionarios PONDERADA
 let parsedRangosDim = {};  // rangos por dimensión para NIVEL-RANGO: { dimN: [{min,max,nombre,diagnostico}] }
+let parsedPerfiles = [];  // perfiles para cuestionarios PERFIL: [{ id, nombre, simbolo, caracteristicas, reto }]
+let perfilErrores  = [];  // errores de la plantilla de perfiles (impiden guardar)
+let perfilAvisos   = [];
 let editingQuizId   = null;
 let deleteTargetId  = null;
 let quizMap         = {};   // id → quiz completo, para evitar problemas con comillas en onclick
@@ -225,6 +229,14 @@ let allQuizzes      = [];   // biblioteca completa (se filtra por curso/dictado/
 const $ = id => document.getElementById(id);
 
 function parseSheetText(raw) {
+  // ── Cuestionario de PERFILES (Plantilla 5): formato propio, ver perfiles.js
+  parsedPerfiles = []; perfilErrores = []; perfilAvisos = [];
+  if (IPP.detect(raw)) {
+    const r = IPP.parse(raw);
+    parsedPerfiles = r.perfiles; perfilErrores = r.errores; perfilAvisos = r.advertencias;
+    parsedRangos = []; parsedRangosDim = {};
+    return r.preguntas;
+  }
   const lines = raw.trim().split('\n').filter(l => l.trim());
   const result = [];
   const rangos    = [];   // para PONDERADA: R1, R2…
@@ -335,6 +347,7 @@ function showLibraryView() {
   parsedQuestions = [];
   parsedRangos    = [];
   parsedRangosDim = {};
+  parsedPerfiles  = []; perfilErrores = []; perfilAvisos = [];
   editingQuizId   = null;
   loadLibrary();
 }
@@ -364,8 +377,10 @@ function showCreateView(quiz = null) {
     // Separate ponderada rangos from dimension-rangos marker
     const allRangos = quiz.rangos || [];
     const dimEntry  = allRangos.find(r => r._dim === true);
-    parsedRangos    = allRangos.filter(r => r._dim !== true);
+    parsedRangos    = allRangos.filter(r => r._dim !== true && r._perfil !== true);
     parsedRangosDim = dimEntry ? dimEntry.data : {};
+    parsedPerfiles  = IPP.fromRangos(allRangos);
+    perfilErrores = []; perfilAvisos = [];
     renderImageList();
     $('image-panel').classList.remove('hidden');
     // populate textarea for reference
@@ -391,7 +406,7 @@ function showCreateView(quiz = null) {
         )
       )
     ].join('\n');
-    $('sheet-input').value = tsv;
+    $('sheet-input').value = parsedPerfiles.length ? IPP.toTSV(parsedPerfiles, parsedQuestions) : tsv;
   }
 }
 
@@ -476,7 +491,7 @@ function parseAndPreview() {
   const raw = $('sheet-input').value;
   if (!raw.trim()) { alert('Pega primero el contenido de Google Sheets.'); return; }
   const qs = parseSheetText(raw);
-  if (!qs.length) { alert('No se encontraron preguntas válidas. Verifica el formato (mínimo 6 columnas separadas por tabulación).'); return; }
+  if (!qs.length && !perfilErrores.length) { alert('No se encontraron preguntas válidas. Verifica el formato (mínimo 6 columnas separadas por tabulación).'); return; }
   parsedQuestions = qs;
   renderImageList();
   $('image-panel').classList.remove('hidden');
@@ -493,6 +508,26 @@ function renderImageList() {
   if (prevPond) prevPond.remove();
   const prevDim = $('rangos-dim-preview');
   if (prevDim) prevDim.remove();
+
+  const prevPerf = $('perfiles-preview');
+  if (prevPerf) prevPerf.remove();
+  if (parsedPerfiles.length || perfilErrores.length) {
+    const div = document.createElement('div');
+    div.id = 'perfiles-preview';
+    div.className = 'space-y-3';
+    div.innerHTML = `
+      ${perfilErrores.length ? `<div class="bg-red-950/50 border border-red-700/60 rounded-xl p-3 text-xs text-red-200 space-y-1">
+        <p class="font-semibold text-red-300"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Corrige estos errores en el Excel e impórtalo de nuevo (no se puede guardar así):</p>
+        ${perfilErrores.map(e => `<p>• ${IPP.esc(e)}</p>`).join('')}</div>` : ''}
+      ${perfilAvisos.map(a => `<div class="bg-amber-950/40 border border-amber-700/50 rounded-xl p-3 text-xs text-amber-200"><i class="fa-solid fa-circle-info mr-1"></i>${IPP.esc(a)}</div>`).join('')}
+      ${parsedPerfiles.length ? `<div class="bg-fuchsia-950/40 border border-fuchsia-700/40 rounded-xl p-3 space-y-1">
+        <p class="text-xs font-semibold text-fuchsia-300 uppercase tracking-wider mb-2"><i class="fa-solid fa-masks-theater mr-1"></i>Cuestionario de perfiles · ${parsedPerfiles.length} perfiles</p>
+        ${parsedPerfiles.map(p => `<div class="text-xs text-slate-300 py-0.5"><span class="font-mono text-fuchsia-300">${IPP.esc(p.id)}</span> ${IPP.esc(p.simbolo)} <strong>${IPP.esc(p.nombre)}</strong>
+          ${p.caracteristicas ? `<span class="text-slate-500"> · ${IPP.esc(p.caracteristicas.slice(0, 70))}${p.caracteristicas.length > 70 ? '…' : ''}</span>` : ''}
+          ${p.reto ? '' : ' <span class="text-amber-400">(sin reto)</span>'}</div>`).join('')}
+      </div>` : ''}`;
+    $('image-list').parentElement.insertBefore(div, $('image-list'));
+  }
 
   // Mostrar resumen de rangos si hay cuestionario ponderada
   const hasPond = parsedQuestions.some(q => q.tipo === 'ponderada');
@@ -537,6 +572,29 @@ function renderImageList() {
     const esAbierta  = q.tipo === 'abierta';
     const esPond     = q.tipo === 'ponderada';
     const esNivel    = q.tipo === 'nivel_rango';
+    if (q.tipo === 'perfil') {
+      return `
+    <div class="bg-slate-900 rounded-xl p-3 space-y-2 border border-fuchsia-700/40">
+      <div class="flex items-center gap-2">
+        <p class="text-sm font-semibold text-white leading-snug flex-1">${i + 1}. ${IPP.esc(q.pregunta)}</p>
+        <span class="shrink-0 text-xs px-2 py-0.5 rounded-full bg-fuchsia-900/50 border border-fuchsia-700/60 text-fuchsia-300 font-semibold"><i class="fa-solid fa-masks-theater mr-1"></i>Perfil</span>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-1">
+        ${(q.opciones || []).map(o => `<p class="text-xs text-slate-400"><span class="font-mono text-fuchsia-300">${IPP.esc(o.perfil)}</span> ${IPP.esc(o.texto)}</p>`).join('')}
+      </div>
+      <div class="flex items-center gap-3 flex-wrap">
+        ${q.imageUrl
+          ? `<img src="${q.imageUrl}" class="img-thumb" onerror="this.style.display='none'">
+             <button onclick="removeImage(${i})" class="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"><i class="fa-solid fa-xmark"></i> Quitar</button>`
+          : `<span class="text-xs text-slate-500 italic">Sin imagen</span>`}
+        <label class="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-xs font-semibold transition-colors">
+          <i class="fa-solid fa-upload"></i>
+          <span id="uplabel-${i}">${q.imageUrl ? 'Cambiar' : 'Subir imagen'}</span>
+          <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="hidden" onchange="handleUpload(event,${i})">
+        </label>
+      </div>
+    </div>`;
+    }
     return `
     <div class="bg-slate-900 rounded-xl p-3 space-y-2 border ${esAbierta ? 'border-amber-700/40' : esPond ? 'border-violet-700/40' : esNivel ? 'border-teal-700/40' : 'border-slate-700/40'}">
       <div class="flex items-center gap-2">
@@ -610,6 +668,7 @@ async function saveQuiz() {
   const nombre = $('quiz-name').value.trim();
   if (!nombre) { alert('Escribe un nombre para el cuestionario.'); $('quiz-name').focus(); return; }
   if (!parsedQuestions.length) { alert('No hay preguntas cargadas.'); return; }
+  if (perfilErrores.length) { alert('El cuestionario de perfiles tiene errores. Corrígelos en el Excel e impórtalo de nuevo.'); return; }
 
   const btn = document.querySelector('#image-panel button[onclick="saveQuiz()"]');
   const origLabel = $('save-btn-label').textContent;
@@ -621,6 +680,9 @@ async function saveQuiz() {
   const rangosToSave = [...parsedRangos];
   if (Object.keys(parsedRangosDim).length > 0) {
     rangosToSave.push({ _dim: true, data: parsedRangosDim });
+  }
+  if (parsedPerfiles.length > 0) {
+    rangosToSave.push({ _perfil: true, data: parsedPerfiles });
   }
 
   const payload = { nombre, preguntas: parsedQuestions, rangos: rangosToSave };

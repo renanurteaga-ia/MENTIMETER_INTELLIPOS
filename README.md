@@ -1,6 +1,6 @@
 # IntelliPOS Quiz 2.0 — v2-dev
 
-Plataforma de cuestionarios y exámenes en tiempo real. El presentador lanza sesiones en vivo; los participantes responden desde cualquier dispositivo con navegador.
+Plataforma de cuestionarios y exámenes en tiempo real (tipos: opción múltiple, abierta, PONDERADA, NIVEL-RANGO y PERFIL). El presentador lanza sesiones en vivo; los participantes responden desde cualquier dispositivo con navegador.
 
 ## URLs
 
@@ -166,6 +166,17 @@ Cuando un proyecto se retrasa, lo primero que hago es:	Ir directo al grano con e
 
 **Almacenamiento de perfiles en `quizzes`:**
 Los perfiles se almacenan en el array `rangos` de la tabla `quizzes` como último elemento con la forma `{ "_perfil": true, "data": [{ id, nombre, simbolo, descripcion }, …] }`. No se requiere cambio de esquema.
+
+### PERFIL (cuestionario de perfiles)
+Identifica el perfil **dominante** y el **secundario** de cada participante (por ejemplo, estilos de comunicación). No hay respuestas correctas. Usa la **Plantilla 5 - PERFILES.xlsx** (2 a 8 perfiles). Lógica en `perfiles.js`.
+
+1. **Sección de perfiles** (arriba): `Perfil | Nombre | Símbolo | Características | Reto`, una fila por perfil (P1…Pn). Las filas P sin nombre se ignoran.
+2. **Sección de preguntas** (debajo del encabezado `Pregunta`): `Pregunta | URL imagen | Perfil 1 | Respuesta 1 | Perfil 2 | Respuesta 2 | …`, un par por perfil, cada perfil una sola vez por pregunta.
+
+- La app mezcla el orden de las respuestas para cada participante y nunca muestra el código de perfil.
+- Calificación: se cuentan las respuestas por perfil. Dominante = mayor cantidad; secundario = la siguiente. Si hay empate en un nivel, ese nivel es **mixto** (todos los perfiles empatados). Si todos empatan, no hay secundario; un perfil con 0 respuestas nunca es secundario.
+- Se guarda en `session_results.rango_obtenido` como `{ tipo:"perfil", nombre, dominante:{perfiles,respuestas,mixto}, secundario:{…}, conteo }`. Los perfiles van en `quizzes.rangos` como `{ _perfil:true, data:[…] }`.
+- Un cuestionario de perfiles no se mezcla con otros tipos de pregunta.
 
 ### Pregunta abierta
 Pon `ABIERTA` en la columna 6; las opciones se ignoran. Requiere calificación manual por el presentador.
