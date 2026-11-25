@@ -143,15 +143,20 @@ const IPP = {
     return e ? (e.data || []) : [];
   },
 
-  // ── Orden aleatorio estable por participante y pregunta ──────────────────
+  // ── Orden de las respuestas en una sesión ───────────────────────────────
+  // Mismo orden para el presentador y para todos los participantes de la sesión:
+  // se mezcla con una semilla fija (id de sesión + n.º de pregunta), así cada sesión
+  // nueva del mismo cuestionario sale en otro orden, pero dentro de la sesión todos ven lo mismo.
+  // Solo cambia el orden en pantalla: el voto se sigue guardando con la clave (A, B, C…).
   _seed(str) {
     let h = 1779033703 ^ str.length;
     for (let i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
     return () => { h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); return ((h ^= h >>> 16) >>> 0) / 4294967296; };
   },
-  shuffledOptions(q, pid, idx) {
+  ordenSesion(q, sessionId, idx) {
     const arr = [...(q.opciones || [])];
-    const rnd = this._seed(`${pid}|${idx}`);
+    if (!sessionId) return arr;                               // sin sesión: orden guardado
+    const rnd = this._seed(`${sessionId}|${idx}`);
     for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
     return arr;
   },

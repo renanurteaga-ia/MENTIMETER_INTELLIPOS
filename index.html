@@ -1896,7 +1896,7 @@
             const totalPart  = Object.keys(sessionData.participants || {}).length;
             const respondido = ((sessionData.voters || {})[String(sessionData.currentIndex)] || []).length;
             const pct        = totalPart > 0 ? Math.round(respondido / totalPart * 100) : 0;
-            const opts       = q.opciones || [];
+            const opts       = IPP.ordenSesion(q, cloudId, sessionData.currentIndex);   // mismo orden que los participantes
             const tot        = opts.reduce((a, o) => a + (sessionData.votes[sessionData.currentIndex+'_'+o.key] || 0), 0);
             $('presenter-options-grid').innerHTML = `
                 <div class="lg:col-span-2 p-5 bg-slate-800 rounded-2xl border border-fuchsia-700/50 shadow-xl space-y-3">
@@ -2523,9 +2523,9 @@
         const selected  = examAnswers[origIdx];
 
         if (q.tipo === 'perfil') {
-            // Respuestas en orden aleatorio por participante, sin letras ni perfil
+            // Respuestas en el orden de la sesión (igual al del presentador), sin letras ni perfil
             if (examPtsBadge) examPtsBadge.textContent = '';
-            $('exam-options-container').innerHTML = IPP.shuffledOptions(q, participantId, origIdx).map(o => {
+            $('exam-options-container').innerHTML = IPP.ordenSesion(q, cloudId, origIdx).map(o => {
                 const isSel = selected === o.key;
                 return `
                 <button onclick="selectExamOption('${o.key}')"
@@ -4332,7 +4332,7 @@
         const esNivel   = tipoQ === 'nivel_rango';
 
         if (tipoQ === 'perfil') {
-            // ── Perfil: respuestas en orden aleatorio por participante, sin letras
+            // ── Perfil: respuestas en el orden de la sesión (igual al del presentador), sin letras
             $('vote-results').classList.add('hidden');
             if (pBadge) pBadge.classList.add('hidden');
             if (votedOption) {
@@ -4342,7 +4342,7 @@
                         <p class="text-xs text-slate-400 mt-1">Esperando a que el presentador avance.</p>
                     </div>`;
             } else {
-                container.innerHTML = IPP.shuffledOptions(q, participantId, sessionData.currentIndex).map(o => `
+                container.innerHTML = IPP.ordenSesion(q, cloudId, sessionData.currentIndex).map(o => `
                     <button onclick="submitVote('${o.key}')"
                         class="w-full p-4 bg-fuchsia-700 hover:bg-fuchsia-600 active:scale-95 rounded-xl font-bold text-white shadow-lg transition text-left flex items-center justify-between gap-3 fade-in">
                         <span>${IPP.esc(o.texto)}</span>

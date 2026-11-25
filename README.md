@@ -173,7 +173,7 @@ Identifica el perfil **dominante** y el **secundario** de cada participante (por
 1. **Sección de perfiles** (arriba): `Perfil | Nombre | Símbolo | Características | Reto`, una fila por perfil (P1…Pn). Las filas P sin nombre se ignoran.
 2. **Sección de preguntas** (debajo del encabezado `Pregunta`): `Pregunta | URL imagen | Perfil 1 | Respuesta 1 | Perfil 2 | Respuesta 2 | …`, un par por perfil, cada perfil una sola vez por pregunta.
 
-- La app mezcla el orden de las respuestas para cada participante y nunca muestra el código de perfil.
+- Orden de las respuestas: se mezcla al importar y, además, en cada sesión con una semilla fija (id de sesión + n.º de pregunta). Dentro de una sesión el presentador y todos los participantes ven exactamente el mismo orden; cada sesión nueva sale en otro orden. Nunca se muestra el código de perfil.
 - Calificación: se cuentan las respuestas por perfil. Dominante = mayor cantidad; secundario = la siguiente. Si hay empate en un nivel, ese nivel es **mixto** (todos los perfiles empatados). Si todos empatan, no hay secundario; un perfil con 0 respuestas nunca es secundario.
 - Se guarda en `session_results.rango_obtenido` como `{ tipo:"perfil", nombre, dominante:{perfiles,respuestas,mixto}, secundario:{…}, conteo }`. Los perfiles van en `quizzes.rangos` como `{ _perfil:true, data:[…] }`.
 - Un cuestionario de perfiles no se mezcla con otros tipos de pregunta.
